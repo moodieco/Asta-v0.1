@@ -1,0 +1,5 @@
+market: forex
+enabled: true            # disabled in config/markets.yaml for the current trial
+provider: oanda
+default_timeframe: 1h
+symbols: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, USD_CAD, USD_CHF]

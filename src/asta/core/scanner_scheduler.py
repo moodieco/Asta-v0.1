@@ -13,7 +13,7 @@ import time
 from typing import Dict, List, Optional
 
 from asta.core.scanner_base import ScannerBase
-from asta.core.scanner_manager import CycleReport, ScannerManager
+from asta.core.scanner_manager import CycleReport
 from asta.utils.logger import get_logger
 from asta.utils.time_utils import timeframe_to_seconds, utcnow
 
@@ -21,7 +21,7 @@ from asta.utils.time_utils import timeframe_to_seconds, utcnow
 class ScannerScheduler:
     def __init__(
         self,
-        manager: ScannerManager,
+        manager,
         tick_seconds: int = 60,
         respect_timeframe: bool = True,
         logger=None,

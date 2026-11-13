@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from asta.core.indicators import detect_ema_cross, ema, slope
 from asta.core.signal_model import ScanContext, SignalType
 from asta.core.strategy import Strategy, StrategyResult
-from asta.markets.indicators import detect_ema_cross, ema, slope
 
 
 class EMACrossoverStrategy(Strategy):

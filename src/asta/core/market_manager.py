@@ -1,15 +1,16 @@
-"""Provider selection + ``ScanContext`` construction per market."""
+"""Provider selection and market settings (config + shipped defaults)."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List, Optional
 
+import yaml
 from pydantic import BaseModel, Field
 
-from asta.core.scanner_base import ScannerBase
-from asta.core.signal_model import Market, ScanContext
+from asta.core.signal_model import Market
 from asta.providers.base import MarketDataProvider
-from asta.utils.exceptions import ConfigurationError, ProviderError
+from asta.utils.exceptions import ConfigurationError
 from asta.utils.logger import get_logger
 
 
@@ -22,10 +23,47 @@ class MarketSettings(BaseModel):
 
 
 class MarketManager:
-    def __init__(self, providers: Dict[Market, MarketDataProvider], markets: Dict[str, MarketSettings]):
+    """Knows which markets are enabled and which provider serves them."""
+
+    def __init__(
+        self,
+        providers: Dict[Market, MarketDataProvider],
+        markets: Optional[Dict[str, MarketSettings]] = None,
+        defaults: Optional[Dict[str, MarketSettings]] = None,
+        universes: Optional[Dict[str, List[str]]] = None,
+    ):
         self.providers = dict(providers)
-        self.markets = dict(markets)
+        self.defaults = dict(defaults or {})
+        self.universes = dict(universes or {})
+        self.markets = self._merge(markets or {})
         self.logger = get_logger("asta.market_manager")
+
+    def _merge(self, configured: Dict[str, MarketSettings]) -> Dict[str, MarketSettings]:
+        merged: Dict[str, MarketSettings] = dict(self.defaults)
+        for key, value in configured.items():
+            merged[str(key).lower()] = value
+        return merged
+
+    @classmethod
+    def load_defaults(cls, root: Optional[Path] = None) -> Dict[str, MarketSettings]:
+        """Read ``markets/<market>/market_config.yaml`` shipped with the code."""
+        import asta.markets as markets_package
+
+        base = Path(root) if root else Path(list(markets_package.__path__)[0])
+        defaults: Dict[str, MarketSettings] = {}
+        for path in sorted(base.glob("*/market_config.yaml")):
+            try:
+                raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                market = str(raw.get("market") or path.parent.name).lower()
+                defaults[market] = MarketSettings(
+                    enabled=bool(raw.get("enabled", True)),
+                    symbols=list(raw.get("symbols") or []),
+                )
+            except Exception as exc:  # noqa: BLE001 - bad default file must not stop startup
+                get_logger("asta.market_manager").error(
+                    "invalid market_config.yaml", extra={"path": str(path), "error": str(exc)}
+                )
+        return defaults
 
     def settings_for(self, market: Market) -> MarketSettings:
         return self.markets.get(market.value, MarketSettings(enabled=False))
@@ -34,40 +72,29 @@ class MarketManager:
         return self.settings_for(market).enabled
 
     def symbols_for(self, market: Market) -> List[str]:
-        return self.settings_for(market).normalized_symbols()
+        configured = self.settings_for(market).normalized_symbols()
+        return configured or list(self.universes.get(market.value, []))
+
+    @classmethod
+    def load_universes(cls, root: Optional[Path] = None) -> Dict[str, List[str]]:
+        """Read each market's ``universe.py`` for the shipped default symbols."""
+        import asta.markets as markets_package
+
+        base = Path(root) if root else Path(list(markets_package.__path__)[0])
+        universes: Dict[str, List[str]] = {}
+        for path in sorted(base.glob("*/universe.py")):
+            market = path.parent.name
+            try:
+                module = __import__("asta.markets.{}.universe".format(market), fromlist=["symbols"])
+                universes[market] = list(module.symbols())
+            except Exception as exc:  # noqa: BLE001 - a broken universe must not stop startup
+                get_logger("asta.market_manager").error(
+                    "invalid universe module", extra={"market": market, "error": str(exc)}
+                )
+        return universes
 
     def provider_for(self, market: Market) -> MarketDataProvider:
         provider = self.providers.get(market)
         if provider is None:
             raise ConfigurationError("no market data provider for {}".format(market.value))
         return provider
-
-    def build_context(self, scanner: ScannerBase, symbol: str, limit: Optional[int] = None) -> ScanContext:
-        if not self.is_enabled(scanner.market):
-            raise ProviderError(
-                "market {} is disabled".format(scanner.market.value), market=scanner.market.value
-            )
-        provider = self.provider_for(scanner.market)
-        count = limit or max(scanner.min_candles + 40, 120)
-        candles = provider.fetch_candles(symbol, scanner.timeframe, count)
-        if not candles:
-            raise ProviderError(
-                "provider returned no candles", provider=provider.name, symbol=symbol
-            )
-        return ScanContext(
-            market=scanner.market,
-            symbol=symbol,
-            timeframe=scanner.timeframe,
-            candles=candles,
-            scanner_id=scanner.id,
-        )
-
-    def health(self) -> Dict[str, bool]:
-        status: Dict[str, bool] = {}
-        for market in Market:
-            if not self.is_enabled(market):
-                status[market.value] = False
-                continue
-            provider = self.providers.get(market)
-            status[market.value] = bool(provider and provider.health_check())
-        return status

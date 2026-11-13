@@ -1,10 +1,12 @@
-"""ASTA command line entry point.
+"""ASTA command line interface.
 
-    asta --once            # single scan cycle, then exit
-    asta --once --dry-run  # scan without posting to Discord
-    asta                   # run the scheduler loop
-    asta --list-scanners   # show discovered scanners and their config
-    asta --health          # provider/credential status
+    asta --once                 # single scan cycle, then exit
+    asta --once --dry-run       # scan without posting to Discord
+    asta                        # scheduler loop
+    asta --list-scanners        # discovered scanners and their config
+    asta --health               # providers, storage, webhooks
+    asta --test-alert           # connectivity test to every webhook
+    asta --sample-alert         # sample signal card in each enabled channel
 """
 
 from __future__ import annotations
@@ -14,38 +16,28 @@ import json
 import sys
 from typing import List, Optional
 
-from asta.app import AstaApp
+from asta import __version__
+from asta.bootstrap import AstaApp
 from asta.core.signal_model import Market
 from asta.utils.exceptions import AstaError
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="asta", description="ASTA V0.1 signal scanner")
-    parser.add_argument("--config", default=None, help="path to asta.yaml (default: config/asta.yaml)")
+    parser.add_argument("--config", default=None, help="config directory (default: config/)")
     parser.add_argument("--once", action="store_true", help="run a single scan cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="never post to Discord")
     parser.add_argument("--list-scanners", action="store_true", help="print discovered scanners")
-    parser.add_argument("--health", action="store_true", help="print provider and credential health")
+    parser.add_argument("--health", action="store_true", help="print provider/storage/webhook health")
     parser.add_argument(
-        "--sample-alert",
-        action="store_true",
-        help="post a labelled sample signal card to each enabled market channel",
+        "--test-alert", action="store_true", help="post a labelled test to every webhook"
     )
     parser.add_argument(
-        "--test-alert",
-        action="store_true",
-        help="post a labelled connectivity test to every configured Discord webhook",
+        "--sample-alert", action="store_true", help="post a labelled sample signal card"
     )
-    parser.add_argument(
-        "--markets",
-        default="",
-        help="comma separated market filter, e.g. crypto,forex",
-    )
-    parser.add_argument(
-        "--scanners",
-        default="",
-        help="comma separated scanner id filter, e.g. CXS002_VOLUME_SPIKE",
-    )
+    parser.add_argument("--markets", default="", help="comma separated market filter")
+    parser.add_argument("--scanners", default="", help="comma separated scanner id filter")
+    parser.add_argument("--version", action="version", version="asta {}".format(__version__))
     return parser
 
 
@@ -58,7 +50,7 @@ def _parse_markets(raw: str) -> Optional[List[Market]]:
         try:
             markets.append(Market(value))
         except ValueError:
-            raise AstaError("unknown market {!r}".format(value))
+            raise AstaError("unknown market {!r}".format(value)) from None
     return markets
 
 
@@ -94,14 +86,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(json.dumps(app.health(), indent=2))
             return 0
 
-        if args.sample_alert:
-            results = app.send_sample_alerts()
-            print(json.dumps({"sample_alerts": results}, indent=2))
-            return 0 if all(item.get("ok") for item in results) else 1
-
         if args.test_alert:
             results = app.send_test_alerts()
             print(json.dumps({"test_alerts": results}, indent=2))
+            return 0 if all(item.get("ok") for item in results) else 1
+
+        if args.sample_alert:
+            results = app.send_sample_alerts()
+            print(json.dumps({"sample_alerts": results}, indent=2))
             return 0 if all(item.get("ok") for item in results) else 1
 
         if args.once:

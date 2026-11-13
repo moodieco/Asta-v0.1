@@ -1,0 +1,12 @@
+# One webhook per market channel. Secrets stay in the environment.
+username: ASTA
+channels:
+  forex:
+    env: DISCORD_WEBHOOK_FOREX
+    label: "#forexy"
+  crypto:
+    env: DISCORD_WEBHOOK_CRYPTO
+    label: "#cryptic"
+  stock:
+    env: DISCORD_WEBHOOK_STOCK
+    label: "#stocky"

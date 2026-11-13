@@ -20,16 +20,15 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from asta.config import load_config
-from asta.core.scanner_registry import ScannerRegistry
-from asta.core.signal_model import Market, ScanContext
-from asta.markets.indicators import (
+from asta.core.indicators import (
     atr,
     ema,
     find_divergence,
     rsi_series,
     volume_ratio,
-    volume_sma,
 )
+from asta.core.scanner_registry import ScannerRegistry
+from asta.core.signal_model import Market, ScanContext
 from asta.providers import build_providers
 from asta.utils.exceptions import AstaError
 from asta.utils.logger import configure_logging
@@ -49,7 +48,7 @@ def pct(value: Optional[float]) -> str:
 
 
 def inspect(provider, scanner_list, symbol: str, timeframe: str, limit: int = 160) -> None:
-    print("\n=== {} · {} ===".format(provider.market.value.upper(), symbol, timeframe))
+    print("\n=== {} · {} ===".format(provider.market.value.upper(), symbol, ))
     try:
         raw = provider.fetch_candles(symbol, timeframe, limit)
     except AstaError as exc:

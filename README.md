@@ -1,103 +1,105 @@
 # ASTA V0.1 — AI Signal Trading Agent
 
-Multi-market signal scanner (Forex, Crypto, Stock) that detects trading setups with
-modular scanners and pushes formatted alerts to Discord channels. **V0.1 detects and
-notifies only — it never places orders.**
+Multi-market signal scanner (Forex, Crypto, Stock) that detects setups with modular
+scanners and pushes formatted alerts to Discord. **V0.1 detects and notifies — it never
+places orders.**
 
 ```
-provider (Binance / OANDA / Yahoo)  ->  scanners  ->  validate -> dedupe -> history -> Discord
+providers ──► data_service ──► scanners ──► signal_manager ──► notifications
+          (candles, cached)            (validate → dedupe → store)   (Discord)
 ```
 
-## Status V0.1
+## Status
 
 | Area | State |
 |---|---|
-| Core (scanner base, registry, manager, scheduler) | done |
-| Signal pipeline (validator, deduplication, history, manager) | done |
-| Providers: Binance (crypto), OANDA (forex), Yahoo (stock) | done |
+| Core (contracts, registry, manager, scheduler, event bus) | done |
+| Services (data, analysis, notification) | done |
+| Providers: Binance crypto, OANDA forex, Yahoo stock | done |
 | Scanners: 2 forex, 3 crypto, 2 stock | done |
-| Discord: webhook client, embed builder, router, alert manager | done |
-| Config (YAML + `.env` + `${VAR}` expansion), CLI, CI | done |
-| Tests | 91 passing (`pytest -q`) |
-| Live order execution / portfolio | out of scope for V0.1 |
+| Signal pipeline: validate, dedupe, history, delivery accounting | done |
+| Storage: JSONL or SQLite (switch with one config value) | done |
+| Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
+| Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
+| Tooling: CLI, 5 scripts, CI (tests + lint) | done |
+| Tests | 122 passing |
 
 ## Quickstart (Bahasa Indonesia)
 
 ```bash
 cd ~/Projects/asta-v0.1
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-cp .env.example .env          # isi webhook Discord + token OANDA (opsional)
-.venv/bin/asta --health       # cek provider & kredensial
-.venv/bin/asta --once --dry-run   # satu siklus scan, tidak kirim ke Discord
-.venv/bin/asta                # jalankan scheduler (default tiap 60 detik)
+cp .env.example .env                 # webhook Discord (+ token OANDA kalau dipakai)
+.venv/bin/asta --health              # provider, storage, webhook
+.venv/bin/asta --once --dry-run      # satu siklus, tidak kirim ke Discord
+.venv/bin/asta                       # scheduler (tick 60 detik)
 ```
 
-`--once` tanpa `--dry-run` akan mengirim sinyal ke channel Discord sesuai market.
-Sinyal yang sama (scanner + symbol + timeframe + arah) tidak dikirim dua kali dalam
-satu dedup window (default 3600 detik).
-
-## Layout
+## Struktur folder
 
 ```
-config/asta.yaml                 runtime config (markets, providers, overrides)
-src/asta/core/                   scanner contract, registry, managers, signal pipeline
-src/asta/providers/              binance / oanda / stock (Yahoo) data providers
-src/asta/markets/<market>/       scanners/, strategies/, indicators/
-src/asta/integrations/discord/   webhook client, embeds, routing, alerts
-src/asta/storage/                TTL cache + append-only JSONL history
-tests/                           unit + integration + end-to-end tests
+config/                     app.yaml · markets.yaml · logging.yaml · discord.yaml
+docs/                       architecture, API, signal spec, scanner guide, db schema, security
+src/asta/
+  main.py                   CLI
+  bootstrap.py              composition root (satu-satunya tempat objek dirakit)
+  config.py                 loader untuk 4 file config
+  core/                     signal model, scanner base/registry/manager, scheduler,
+                            validator, manager, dedup, market manager, event bus, indicators/
+  markets/<market>/         market_config.yaml · universe.py · indicators/ · strategies/ · scanners/
+  providers/                base.py + crypto/binance/ · forex/oanda/ · stock/yahoo/
+  services/                 data_service · analysis_service · notification_service
+  integrations/discord/     client · embed_builder · router · alert_manager · channel_config
+  storage/                  database · repositories/ · models/ · signal_history · cache
+  utils/                    logger · time_utils · exceptions
+tests/                      unit/ (core, forex, crypto, stock) · integration/ · e2e/ · fixtures/
+scripts/                    run_asta · test_connections · validate_config · scanner_status · inspect_market
+data/                       cache/ · history/ · logs/
 ```
 
-Each scanner lives in `src/asta/markets/<market>/scanners/<SCANNER_ID>/` with a
-`scanner.py` (identity + strategy wiring) and a `config.yaml` (timeframe, symbols,
-tunables). Discovery is automatic — drop a folder and it is picked up.
+Setiap scanner punya folder sendiri berisi `scanner.py`, `config.yaml`, dan `README.md`
+(entry conditions, parameter, kapan dia diam).
 
-## Scanners in V0.1
+## Scanner V0.1
 
-| ID | Market | TF | Strategy |
+| ID | Market | TF | Strategi |
 |---|---|---|---|
-| `FXS001_RSI_DIVERGENCE` | forex | 1h | regular bullish/bearish RSI divergence |
-| `FXS002_EMA_CROSSOVER` | forex | 1h | EMA20/EMA50 cross, EMA200 context |
-| `CXS001_RSI_DIVERGENCE` | crypto | 1h | RSI divergence + volume expansion |
-| `CXS002_VOLUME_SPIKE` | crypto | 15m | 3x volume spike with directional body |
+| `FXS001_RSI_DIVERGENCE` | forex | 1h | regular RSI divergence |
+| `FXS002_EMA_CROSSOVER` | forex | 1h | EMA20/50 cross + EMA200 context |
+| `CXS001_RSI_DIVERGENCE` | crypto | 1h | RSI divergence + volume gate |
+| `CXS002_VOLUME_SPIKE` | crypto | 15m | 3x volume spike, directional body |
 | `CXS003_BREAKOUT_TREND` | crypto | 1h | 30-bar breakout + volume + ATR cap |
 | `STS001_EMA_TREND` | stock | 1d | EMA cross aligned with EMA200 |
-| `STS002_BREAKOUT_TREND` | stock | 1d | 40-bar breakout + volume |
+| `STS002_BREAKOUT_TREND` | stock | 1d | 40-bar breakout + volume + gap |
 
-## CLI
-
-```bash
-asta --list-scanners                  # inventory with timeframe/state
-asta --health                         # provider + credential + history status
-asta --once [--dry-run]               # one cycle
-asta --once --markets crypto,stock    # market filter
-asta --once --scanners CXS002_VOLUME_SPIKE
-asta                                  # scheduler loop
-```
-
-## Credentials
-
-* **Crypto** — Binance public REST, no key required.
-* **Forex** — `OANDA_API_TOKEN` (+ optional `OANDA_ACCOUNT_ID`) for a practice account.
-  Missing token degrades gracefully: forex scanners log a provider error, other markets keep running.
-* **Stock** — Yahoo Finance chart endpoint, no key required.
-* **Discord** — `DISCORD_WEBHOOK_FOREX`, `DISCORD_WEBHOOK_CRYPTO`, `DISCORD_WEBHOOK_STOCK`.
-  Without a webhook the alert fails loudly in the log/report instead of silently disappearing.
-
-## Offline demo
+## CLI & scripts
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/scan_once.py
-PYTHONPATH=src .venv/bin/python scripts/preview_alert.py
+asta --once [--dry-run] [--markets crypto] [--scanners CXS002_VOLUME_SPIKE]
+asta --list-scanners | --health | --test-alert | --sample-alert
+asta --config /path/to/config-dir
+
+python scripts/validate_config.py       # static config/scanner checks
+python scripts/test_connections.py      # provider + webhook connectivity (--send to post)
+python scripts/scanner_status.py        # inventory, health, recent signals
+python scripts/inspect_market.py --market crypto --symbols BTCUSDT --timeframes 1h
+python scripts/scan_once.py             # offline demo with synthetic candles
 ```
 
-`scan_once.py` runs the whole pipeline against deterministic synthetic candles, so you can
-verify scanners, validation, dedup and Discord payloads without any API key.
+## Configuration
+
+| File | Isi |
+|---|---|
+| `config/app.yaml` | environment, scheduler, validator, storage backend, provider settings |
+| `config/markets.yaml` | market mana yang aktif, daftar symbol, override per scanner |
+| `config/logging.yaml` | level, format (text/json), rotating file, per-logger level |
+| `config/discord.yaml` | mapping market → env var webhook + label channel |
+
+Secrets hanya di `.env` (`${VAR}` di-expand saat load). `storage.backend: jsonl | sqlite`
+menentukan penyimpanan sinyal.
 
 ## Documentation
 
-* [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, data flow, design decisions
-* [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) — scanner/provider contracts, signal schema, Discord payload, CLI
-* [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md) — what V0.1 covers and V0.2 candidates
-* [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — conventions, adding scanners, test rules
-* [AGENTS.md](AGENTS.md) — instructions for AI coding agents working in this repo
+* [ARCHITECTURE](docs/ARCHITECTURE.md) · [API](docs/API_DOCUMENTATION.md) · [SIGNAL SPEC](docs/SIGNAL_SPECIFICATION.md)
+* [SCANNER GUIDE](docs/SCANNER_GUIDE.md) · [DATABASE SCHEMA](docs/DATABASE_SCHEMA.md) · [SECURITY](docs/SECURITY.md)
+* [ROADMAP](docs/DEVELOPMENT_ROADMAP.md) · [CONTRIBUTING](docs/CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)

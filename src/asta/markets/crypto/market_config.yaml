@@ -1,0 +1,5 @@
+market: crypto
+enabled: true
+provider: binance
+default_timeframe: 1h
+symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT, ADAUSDT]

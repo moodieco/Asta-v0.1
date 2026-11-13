@@ -1,6 +1,6 @@
-"""Indicators used by crypto strategies (re-exported from the shared library)."""
+"""Indicators used by crypto strategies: shared maths + liquidity helpers."""
 
-from asta.markets.indicators import (
+from asta.core.indicators import (
     atr,
     detect_breakout,
     detect_volume_spike,
@@ -12,6 +12,10 @@ from asta.markets.indicators import (
     volume_ratio,
     volume_sma,
 )
+from asta.markets.crypto.indicators.liquidity import (
+    is_liquid_volume,
+    relative_volume_percentile,
+)
 
 __all__ = [
     "atr",
@@ -19,6 +23,8 @@ __all__ = [
     "detect_volume_spike",
     "ema",
     "find_divergence",
+    "is_liquid_volume",
+    "relative_volume_percentile",
     "rsi",
     "rsi_series",
     "slope",

@@ -7,7 +7,7 @@ talk to Discord, never write to storage - the signal pipeline does that.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 

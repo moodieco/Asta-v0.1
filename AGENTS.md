@@ -1,44 +1,53 @@
 # AGENTS.md
 
-Guidance for AI coding agents (and humans) working in this repository.
+Instructions for AI coding agents and humans working in this repository.
 
-## Ground rules
+## Non-negotiables
 
-1. **Scanners produce signals; they never send messages.** Discord access is only
-   allowed through `asta.integrations.discord`. A scanner that imports `httpx` or a
-   webhook URL is a bug.
-2. **One market per scanner.** `ScannerBase` validates `config.market == scanner.market`
-   at construction; do not weaken this check.
-3. **No network in tests.** Use `httpx.MockTransport` for providers/Discord and
-   `tests/helpers.py` for deterministic candles. Never call live APIs from a test.
-4. **Every scanner needs a config.yaml** next to `scanner.py`; discovery and the registry
-   both rely on it.
-5. **Time is UTC everywhere.** Use `asta.utils.time_utils.utcnow` / `ensure_utc`.
-6. Keep the code Python 3.9 compatible (no `X | Y` annotations, no `match`).
+1. **Scanners produce signals; they never send messages.** Discord access is limited to
+   `asta.integrations.discord` and `asta.services.notification_service`.
+2. **One market per scanner.** `ScannerBase` rejects a config whose market differs.
+3. **No network in tests.** Providers and Discord use `httpx.MockTransport`; candles come
+   from `tests/fixtures/market_data.py`.
+4. **Every scanner ships three files**: `scanner.py`, `config.yaml`, `README.md`.
+5. **UTC everywhere** (`asta.utils.time_utils`), never naive datetimes.
+6. **Python 3.9 compatible**: no `X | Y` annotations, no `match`, no walrus in odd places.
+7. **Composition only in `bootstrap.py`.** Services receive collaborators, never build them.
 
-## Before finishing any change
+## Before finishing a change
 
 ```bash
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # must stay green (91 tests today)
-.venv/bin/asta --list-scanners         # discovery must still find every scanner
-.venv/bin/asta --once --dry-run        # must not raise; errors list should be explainable
+.venv/bin/python -m pytest -q              # 122 tests, must stay green
+.venv/bin/python scripts/validate_config.py
+.venv/bin/asta --list-scanners             # discovery must still find 7 scanners
+.venv/bin/asta --once --dry-run            # errors must be explainable
+.venv/bin/ruff check src tests scripts     # lint
 ```
 
-## Adding a scanner (checklist)
+## Where things go
 
-1. Create `src/asta/markets/<market>/scanners/<ID>/`.
-2. Add `__init__.py`, `scanner.py`, `config.yaml` (copy an existing scanner).
-3. Put reusable logic in `markets/strategies/` (shared) or `markets/<market>/strategies/`
-   (market-tuned subclass). Scanners should stay ~30 lines.
-4. Reuse `markets/indicators/` instead of re-deriving math inline.
-5. Add `tests/<market>/test_*.py` covering: fires on the intended pattern, stays quiet
-   otherwise, and emits the expected `signal_type`.
-6. Run the checks above; extend README's scanner table.
+| You are adding… | Put it in |
+|---|---|
+| Strategy logic shared by markets | `markets/strategies/` |
+| Market-tuned defaults | `markets/<market>/strategies/` |
+| Indicator maths used by several markets | `core/indicators/` |
+| Market-specific indicator helper (sessions, gaps, percentile) | `markets/<market>/indicators/` |
+| New provider / broker | `providers/<market>/<broker>/` (`client.py` + `candles.py`) |
+| New persistence | `storage/` (`database.py`, `repositories/`, `models/`) |
+| Orchestration | `services/` |
+
+## Invariants worth tests
+
+* `Signal.dedup_key` = market:scanner:symbol:timeframe:direction.
+* A still-forming candle is never scanned (`filter_closed_candles`).
+* Rejected signals never reach storage or Discord.
+* Delivery failures are reported but the signal stays persisted.
+* Event bus handlers cannot break a cycle.
 
 ## Files that must stay in sync
 
-* `config/asta.yaml` `scanner_overrides` keys ⇄ scanner ids.
-* `docs/API_DOCUMENTATION.md` ⇄ public contracts (`Signal`, `ScannerBase`,
-  `MarketDataProvider`, `DeliveryResult`).
-* `README.md` scanner table ⇄ discovered scanners.
+* `config/markets.yaml: scanner_overrides` ⇄ scanner ids.
+* `README.md` scanner table ⇄ `asta --list-scanners`.
+* `docs/API_DOCUMENTATION.md` ⇄ public contracts.
+* `docs/DATABASE_SCHEMA.md` ⇄ `storage/database.py` schema.

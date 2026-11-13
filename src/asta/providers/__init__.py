@@ -1,27 +1,26 @@
-"""Market data providers (Binance, OANDA, Yahoo Stocks)."""
+"""Market data providers, one package per broker."""
 
 from typing import Any, Dict, Optional
 
 from asta.core.signal_model import Market
-from asta.providers.base import MarketDataProvider
+from asta.providers.base import BaseHttpClient, MarketDataProvider
 
-__all__ = ["MarketDataProvider", "build_providers"]
+__all__ = ["BaseHttpClient", "MarketDataProvider", "build_providers"]
 
 
 def build_providers(settings: Optional[Dict[str, Any]] = None) -> Dict[Market, MarketDataProvider]:
     """Instantiate every provider from the ``providers:`` config block.
 
-    A provider is always constructed; missing credentials surface at fetch time
+    Providers are always constructed; missing credentials surface at fetch time
     so one unconfigured market never blocks the others.
     """
     settings = settings or {}
-    from asta.providers.binance.provider import BinanceProvider
-    from asta.providers.oanda.provider import OandaProvider
-    from asta.providers.stock.provider import StockProvider
+    from asta.providers.crypto.binance import BinanceProvider
+    from asta.providers.forex.oanda import OandaProvider
+    from asta.providers.stock.yahoo import StockProvider
 
-    providers: Dict[Market, MarketDataProvider] = {
+    return {
         Market.CRYPTO: BinanceProvider(settings.get("binance") or {}),
         Market.FOREX: OandaProvider(settings.get("oanda") or {}),
         Market.STOCK: StockProvider(settings.get("stock") or {}),
     }
-    return providers

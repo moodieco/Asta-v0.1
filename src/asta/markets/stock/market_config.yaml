@@ -1,0 +1,5 @@
+market: stock
+enabled: true
+provider: yahoo
+default_timeframe: 1d
+symbols: [AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META]

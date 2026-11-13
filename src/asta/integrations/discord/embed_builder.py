@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from asta.core.signal_model import Market, Signal, SignalType
 from asta.utils.time_utils import isoformat, utcnow
@@ -71,7 +71,7 @@ def build_payload(signal: Signal, username: str = "ASTA", sample: bool = False) 
 TEST_COLOR = 0xE67E22
 
 
-def build_test_embed(market: Market) -> Dict[str, Any]:
+def build_test_embed(market: Market, channel_label: Optional[str] = None) -> Dict[str, Any]:
     """Deliberately labelled as a test so it can never be mistaken for a signal."""
     emoji = MARKET_EMOJI.get(market.value, "📊")
     return {
@@ -84,7 +84,11 @@ def build_test_embed(market: Market) -> Dict[str, Any]:
         "color": TEST_COLOR,
         "fields": [
             {"name": "Market", "value": "{} {}".format(emoji, market.label), "inline": True},
-            {"name": "Channel", "value": "#{}-signals".format(market.value), "inline": True},
+            {
+                "name": "Channel",
+                "value": channel_label or "#{}-signals".format(market.value),
+                "inline": True,
+            },
             {"name": "Version", "value": "ASTA V0.1", "inline": True},
         ],
         "footer": {"text": "ASTA V0.1 · connectivity test"},
@@ -92,8 +96,10 @@ def build_test_embed(market: Market) -> Dict[str, Any]:
     }
 
 
-def build_test_payload(market: Market, username: str = "ASTA") -> Dict[str, Any]:
-    return {"username": username, "embeds": [build_test_embed(market)]}
+def build_test_payload(
+    market: Market, username: str = "ASTA", channel_label: Optional[str] = None
+) -> Dict[str, Any]:
+    return {"username": username, "embeds": [build_test_embed(market, channel_label=channel_label)]}
 
 
 def _short_number(value: float) -> str:

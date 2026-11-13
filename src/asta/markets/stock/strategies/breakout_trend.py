@@ -1,5 +1,6 @@
-"""Stock 52-week style breakout on daily bars with volume confirmation."""
+"""Stock breakout on daily bars with volume + overnight gap context."""
 
+from asta.markets.stock.indicators import overnight_gap_pct
 from asta.markets.strategies.breakout_trend import BreakoutTrendStrategy
 
 
@@ -14,3 +15,11 @@ class StockBreakoutTrendStrategy(BreakoutTrendStrategy):
         "min_confidence": 0.55,
         "min_candles": 90,
     }
+
+    def evaluate(self, context):
+        results = super().evaluate(context)
+        gap = overnight_gap_pct(context.candles)
+        for result in results:
+            if gap is not None:
+                result.indicators["gap_pct"] = round(gap, 3)
+        return results

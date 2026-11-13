@@ -1,13 +1,15 @@
-"""Small logging setup shared by every ASTA component.
+"""Logging setup shared by every ASTA component.
 
-One formatter, one stream handler, no third-party logging dependency.
-Set ``ASTA_LOG_FORMAT=json`` for line-delimited JSON (nice for journals).
+Console + optional rotating file handler. ``format: json`` emits one JSON
+object per line (journald/grep friendly).
 """
 
 import json
 import logging
+import logging.handlers
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 _CONFIGURED = False
@@ -55,18 +57,41 @@ def get_extra_fields(record: logging.LogRecord) -> Dict[str, Any]:
     }
 
 
-def configure_logging(level: str = "INFO", fmt: Optional[str] = None, force: bool = False) -> None:
+def configure_logging(
+    level: str = "INFO",
+    fmt: Optional[str] = None,
+    logger_levels: Optional[Dict[str, str]] = None,
+    log_file: Optional[str] = None,
+    max_bytes: int = 5 * 1024 * 1024,
+    backup_count: int = 3,
+    force: bool = False,
+) -> None:
     global _CONFIGURED
     if _CONFIGURED and not force:
         return
-    fmt = fmt or os.getenv("ASTA_LOG_FORMAT", "text")
-    handler = logging.StreamHandler(stream=sys.stdout)
-    handler.setFormatter(JsonFormatter() if fmt.lower() == "json" else TextFormatter())
+    fmt = (fmt or os.getenv("ASTA_LOG_FORMAT", "text")).lower()
+    formatter = JsonFormatter() if fmt == "json" else TextFormatter()
+
     root = logging.getLogger()
     for existing in list(root.handlers):
         root.removeHandler(existing)
-    root.addHandler(handler)
+
+    console = logging.StreamHandler(stream=sys.stdout)
+    console.setFormatter(formatter)
+    root.addHandler(console)
+
+    if log_file:
+        path = Path(log_file).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(
+            path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+        )
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+
     root.setLevel(getattr(logging, str(level).upper(), logging.INFO))
+    for name, logger_level in (logger_levels or {}).items():
+        logging.getLogger(name).setLevel(getattr(logging, str(logger_level).upper(), logging.INFO))
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     _CONFIGURED = True

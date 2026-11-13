@@ -2,12 +2,19 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ruff_cache/
 .eggs/
 *.egg-info/
 build/
 dist/
 .env
-data/
-logs/
-*.log
 .DS_Store
+
+# runtime data
+data/cache/*
+!data/cache/.gitkeep
+data/history/*
+!data/history/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+*.log

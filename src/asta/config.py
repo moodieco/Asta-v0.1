@@ -1,4 +1,15 @@
-"""Configuration loading: YAML + .env + ``${VAR}`` expansion."""
+"""Configuration loading.
+
+Four files, one model::
+
+    config/app.yaml       runtime, scheduler, validator, storage, providers
+    config/markets.yaml   enabled markets, symbol universe, scanner overrides
+    config/logging.yaml   logging level/format/file
+    config/discord.yaml   channel -> webhook env var mapping
+
+Environment variables are expanded (``${VAR}``) and ``.env`` is loaded first, so
+secrets never live in YAML.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +26,11 @@ from asta.utils.exceptions import ConfigurationError
 from asta.utils.time_utils import normalize_timeframe
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
+DEFAULT_WEBHOOK_ENV = {
+    "forex": "DISCORD_WEBHOOK_FOREX",
+    "crypto": "DISCORD_WEBHOOK_CRYPTO",
+    "stock": "DISCORD_WEBHOOK_STOCK",
+}
 
 
 class SchedulerSettings(BaseModel):
@@ -35,28 +51,81 @@ class ValidatorSettings(BaseModel):
 
 
 class StorageSettings(BaseModel):
-    signal_history_path: str = "data/signal_history.jsonl"
+    backend: str = "jsonl"
+    signal_history_path: str = "data/history/signals.jsonl"
+    sqlite_path: str = "data/history/asta.db"
     dedup_window_seconds: int = 3600
     enabled: bool = True
+
+    @field_validator("backend")
+    @classmethod
+    def _known_backend(cls, value: str) -> str:
+        backend = str(value).strip().lower()
+        if backend not in ("jsonl", "sqlite"):
+            raise ValueError("storage.backend must be 'jsonl' or 'sqlite'")
+        return backend
+
+
+class LoggingSettings(BaseModel):
+    level: str = "INFO"
+    format: str = "text"
+    file: Optional[str] = None
+    max_bytes: int = 5 * 1024 * 1024
+    backup_count: int = 3
+    loggers: Dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("format")
+    @classmethod
+    def _known_format(cls, value: str) -> str:
+        fmt = str(value).strip().lower()
+        if fmt not in ("text", "json"):
+            raise ValueError("logging.format must be 'text' or 'json'")
+        return fmt
+
+
+class DiscordChannelSettings(BaseModel):
+    env: str
+    label: str = ""
+
+
+class DiscordSettings(BaseModel):
+    username: str = "ASTA"
+    channels: Dict[str, DiscordChannelSettings] = Field(default_factory=dict)
+
+    @classmethod
+    def default(cls) -> "DiscordSettings":
+        return cls(
+            channels={
+                market: DiscordChannelSettings(env=env, label="#{}-signals".format(market))
+                for market, env in DEFAULT_WEBHOOK_ENV.items()
+            }
+        )
 
 
 class AstaConfig(BaseModel):
     environment: str = "development"
-    log_level: str = "INFO"
     dry_run: bool = False
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     validator: ValidatorSettings = Field(default_factory=ValidatorSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    discord: DiscordSettings = Field(default_factory=DiscordSettings)
     providers: Dict[str, Any] = Field(default_factory=dict)
     markets: Dict[str, MarketSettings] = Field(default_factory=dict)
     scanner_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    source_path: Optional[str] = None
+    config_dir: Optional[str] = None
+
+    @property
+    def source_path(self) -> Optional[str]:
+        if not self.config_dir:
+            return None
+        app = Path(self.config_dir) / "app.yaml"
+        return str(app) if app.exists() else None
 
     @property
     def project_root(self) -> Path:
-        if self.source_path:
-            path = Path(self.source_path).resolve()
-            return path.parent.parent if path.parent.name == "config" else path.parent
+        if self.config_dir:
+            return Path(self.config_dir).resolve().parent
         return Path.cwd()
 
     def resolve_path(self, value: str) -> Path:
@@ -65,6 +134,14 @@ class AstaConfig(BaseModel):
 
     def market_settings(self) -> Dict[str, MarketSettings]:
         return dict(self.markets)
+
+    def webhook_env(self, market: str) -> str:
+        channel = self.discord.channels.get(market)
+        return channel.env if channel else DEFAULT_WEBHOOK_ENV.get(market, "")
+
+    def channel_label(self, market: str) -> str:
+        channel = self.discord.channels.get(market)
+        return channel.label if channel and channel.label else "#{}-signals".format(market)
 
 
 def load_dotenv(path: Optional[Path] = None, override: bool = False) -> Dict[str, str]:
@@ -98,43 +175,65 @@ def _expand_env(value: Any) -> Any:
     return value
 
 
+def _read_yaml(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigurationError("invalid YAML in {}: {}".format(path, exc)) from exc
+    if not isinstance(data, dict):
+        raise ConfigurationError("{} must contain a mapping".format(path))
+    return data
+
+
 def _coerce_bool(value: str) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
-def load_config(path: Optional[str] = None, env_file: Optional[Path] = None) -> AstaConfig:
-    """Load ``config/asta.yaml`` with environment overrides."""
+def load_config(
+    config_dir: Optional[str] = None,
+    env_file: Optional[Path] = None,
+    require: bool = True,
+) -> AstaConfig:
+    """Load the four config files and merge them into :class:`AstaConfig`."""
     load_dotenv(env_file)
-    raw_path = path or os.getenv("ASTA_CONFIG") or "config/asta.yaml"
-    resolved = Path(raw_path).expanduser()
-    if not resolved.is_absolute():
-        resolved = Path.cwd() / resolved
-    if not resolved.exists():
-        raise ConfigurationError("config file not found: {}".format(resolved))
+    raw_dir = config_dir or os.getenv("ASTA_CONFIG_DIR") or "config"
+    directory = Path(raw_dir).expanduser()
+    if not directory.is_absolute():
+        directory = Path.cwd() / directory
+    if not directory.is_dir():
+        if require:
+            raise ConfigurationError("config directory not found: {}".format(directory))
+        return AstaConfig()
 
-    try:
-        raw = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        raise ConfigurationError("invalid YAML in {}: {}".format(resolved, exc)) from exc
-    if not isinstance(raw, dict):
-        raise ConfigurationError("config root must be a mapping")
+    app = _read_yaml(directory / "app.yaml")
+    markets = _read_yaml(directory / "markets.yaml")
+    logging_cfg = _read_yaml(directory / "logging.yaml")
+    discord_cfg = _read_yaml(directory / "discord.yaml")
 
-    raw = _expand_env(raw)
-    # Runtime overrides win over the file.
+    merged: Dict[str, Any] = dict(app)
+    merged["markets"] = {
+        str(key).lower(): value for key, value in (markets.get("markets") or {}).items()
+    }
+    merged["scanner_overrides"] = markets.get("scanner_overrides") or {}
+    if logging_cfg:
+        merged["logging"] = logging_cfg
+    if discord_cfg:
+        merged["discord"] = discord_cfg
+
+    merged = _expand_env(merged)
     if os.getenv("ASTA_LOG_LEVEL"):
-        raw["log_level"] = os.environ["ASTA_LOG_LEVEL"]
+        merged.setdefault("logging", {})
+        merged["logging"] = {**merged["logging"], "level": os.environ["ASTA_LOG_LEVEL"]}
     if os.getenv("ASTA_DRY_RUN") and _coerce_bool(os.environ["ASTA_DRY_RUN"]):
-        raw["dry_run"] = True
-    if "markets" in raw:
-        raw["markets"] = {
-            str(key).lower(): value for key, value in (raw.get("markets") or {}).items()
-        }
+        merged["dry_run"] = True
 
     try:
-        config = AstaConfig(**raw)
-    except Exception as exc:  # noqa: BLE001 - pydantic error surface
-        raise ConfigurationError("invalid config {}: {}".format(resolved, exc)) from exc
-    config.source_path = str(resolved)
+        config = AstaConfig(**merged)
+    except Exception as exc:  # noqa: BLE001 - surface pydantic errors
+        raise ConfigurationError("invalid config in {}: {}".format(directory, exc)) from exc
+    config.config_dir = str(directory)
     return config
 
 

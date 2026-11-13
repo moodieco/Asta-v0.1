@@ -1,6 +1,4 @@
-"""Offline end-to-end demo: synthetic candles -> scanners -> pipeline -> dry-run alerts.
-
-Run with the package installed (``pip install -e .``) or via::
+"""Offline end-to-end demo: synthetic candles -> services -> pipeline -> dry-run alerts.
 
     PYTHONPATH=src python scripts/scan_once.py
 """
@@ -19,6 +17,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from asta.core.deduplication import DeduplicationStore
+from asta.core.event_bus import EventBus
 from asta.core.market_manager import MarketManager, MarketSettings
 from asta.core.scanner_manager import ScannerManager
 from asta.core.scanner_registry import ScannerRegistry
@@ -29,7 +28,11 @@ from asta.integrations.discord.alert_manager import AlertManager
 from asta.integrations.discord.channel_config import ChannelConfig
 from asta.integrations.discord.discord_router import DiscordRouter
 from asta.providers.base import MarketDataProvider
+from asta.services.analysis_service import AnalysisService
+from asta.services.data_service import DataService
+from asta.services.notification_service import NotificationService
 from asta.storage.cache import TTLCache
+from asta.storage.signal_history import SignalHistory
 from asta.utils.logger import configure_logging
 
 
@@ -71,6 +74,9 @@ class SyntheticProvider(MarketDataProvider):
             price = close
         return candles
 
+    def health_check(self) -> bool:
+        return True
+
 
 def main() -> int:
     configure_logging("INFO")
@@ -85,20 +91,28 @@ def main() -> int:
         "stock": MarketSettings(enabled=True, symbols=["AAPL", "NVDA"]),
     }
     market_manager = MarketManager(providers, markets)
+    data_service = DataService(market_manager)
+
     registry = ScannerRegistry()
     registry.discover()
     scanners = registry.build_all(registry.load_configs())
-    router = DiscordRouter(ChannelConfig.from_env(), dry_run=True)
+
+    channels = ChannelConfig.from_dict({})
+    router = DiscordRouter(channels, dry_run=True)
+    notifier = NotificationService(AlertManager(router, dry_run=True), channels, dry_run=True)
     signal_manager = SignalManager(
         validator=SignalValidator(min_confidence=0.3, max_age_seconds=86400 * 365 * 50),
         deduplication=DeduplicationStore(3600, TTLCache(3600)),
-        history=None,
-        alert_manager=AlertManager(router, dry_run=True),
+        history=SignalHistory(None, enabled=False),
+        notifier=notifier,
     )
-    manager = ScannerManager(market_manager, signal_manager, scanners)
-    report = manager.run_cycle()
+    bus = EventBus()
+    analysis = AnalysisService(ScannerManager(scanners), signal_manager, data_service, bus)
+    report = analysis.run_cycle()
+
     print("\nscanners discovered:", len(scanners))
     print("cycle report:", report.to_dict())
+    print("events:", [event.name for event in bus.history][:8])
     return 0
 
 

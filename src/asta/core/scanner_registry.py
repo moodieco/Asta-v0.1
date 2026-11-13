@@ -69,7 +69,7 @@ class ScannerRegistry:
                 "unknown scanner id {!r}; registered: {}".format(
                     scanner_id, ", ".join(sorted(self._classes)) or "<none>"
                 )
-            )
+            ) from None
 
     def ids(self) -> List[str]:
         return sorted(self._classes)
@@ -80,7 +80,13 @@ class ScannerRegistry:
         imported: List[str] = []
         for package_name in packages:
             package = importlib.import_module(package_name)
-            for module_info in pkgutil.walk_packages(package.__path__, prefix=package_name + "."):
+
+            def _walk_error(name: str) -> None:
+                logger.error("package import failed during discovery", extra={"module": name})
+
+            for module_info in pkgutil.walk_packages(
+                package.__path__, prefix=package_name + ".", onerror=_walk_error
+            ):
                 if not module_info.name.endswith(".scanner"):
                     continue
                 try:

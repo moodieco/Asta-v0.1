@@ -31,13 +31,13 @@ class SignalManager:
         validator: SignalValidator,
         deduplication: DeduplicationStore,
         history: Optional[SignalHistory] = None,
-        alert_manager=None,
+        notifier=None,
         logger=None,
     ):
         self.validator = validator
         self.deduplication = deduplication
         self.history = history
-        self.alert_manager = alert_manager
+        self.notifier = notifier
         self.logger = logger or get_logger("asta.signal_manager")
         self._accepted_total = 0
         self._rejected_total = 0
@@ -72,9 +72,9 @@ class SignalManager:
                 except OSError as exc:
                     self.logger.error("failed to persist signal", extra={"error": str(exc)})
 
-            if self.alert_manager is not None:
+            if self.notifier is not None:
                 try:
-                    result = self.alert_manager.dispatch(signal)
+                    result = self.notifier.dispatch(signal)
                     if getattr(result, "ok", False) or getattr(result, "dry_run", False):
                         outcome.delivered += 1
                     else:
@@ -83,7 +83,7 @@ class SignalManager:
                         )
                 except DiscordError as exc:
                     outcome.delivery_errors.append(str(exc))
-                    self.logger.error("discord delivery raised", extra={"error": str(exc)})
+                    self.logger.error("notification failed", extra={"error": str(exc)})
 
         return outcome
 

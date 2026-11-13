@@ -1,5 +1,6 @@
-"""Forex EMA crossover with a 200 EMA trend filter."""
+"""Forex EMA crossover with a 200 EMA trend filter and session context."""
 
+from asta.markets.forex.indicators import session_for
 from asta.markets.strategies.ema_crossover import EMACrossoverStrategy
 
 
@@ -15,3 +16,10 @@ class ForexEMACrossoverStrategy(EMACrossoverStrategy):
         "min_confidence": 0.5,
         "min_candles": 220,
     }
+
+    def evaluate(self, context):
+        results = super().evaluate(context)
+        session = session_for(context.last_timestamp)
+        for result in results:
+            result.metadata["session"] = session
+        return results

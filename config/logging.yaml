@@ -1,0 +1,9 @@
+# Console + rotating file logging.
+level: INFO
+format: text                  # text | json
+file: data/logs/asta.log
+max_bytes: 5242880            # 5 MB
+backup_count: 3
+loggers:
+  httpx: WARNING
+  httpcore: WARNING

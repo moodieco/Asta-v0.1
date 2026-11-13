@@ -1,7 +1,13 @@
-"""Append-only JSONL signal history.
+"""Accepted-signal storage: JSONL by default, SQLite optional.
 
-Deliberately dumb: one line per accepted signal, fsync-friendly, easy to grep
-and easy to replay into a database later.
+Both implementations expose the same tiny interface consumed by
+:class:`asta.core.signal_manager.SignalManager`::
+
+    append(signal) -> bool
+    load_all() -> List[dict]
+    tail(n) -> List[dict]
+    count() -> int
+    stats() -> Dict[str, int]
 """
 
 from __future__ import annotations
@@ -14,11 +20,15 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
 
 from asta.core.signal_model import Signal
+from asta.storage.database import Database
+from asta.storage.repositories.signal_repository import SignalRepository
 from asta.utils.logger import get_logger
 from asta.utils.time_utils import parse_datetime
 
 
 class SignalHistory:
+    """Append-only JSONL log: one line per accepted signal."""
+
     def __init__(self, path: Optional[Union[str, Path]] = None, enabled: bool = True):
         self.path = Path(path).expanduser() if path else None
         self.enabled = bool(enabled and self.path)
@@ -77,3 +87,48 @@ class SignalHistory:
             key = "{}:{}".format(record.get("market", "?"), record.get("scanner_id", "?"))
             counts[key] = counts.get(key, 0) + 1
         return counts
+
+
+class SqliteSignalHistory:
+    """SQLite-backed store with the same interface as :class:`SignalHistory`."""
+
+    def __init__(self, repository: SignalRepository, enabled: bool = True):
+        self.repository = repository
+        self.enabled = enabled
+        self.path = repository.database.path
+
+    def append(self, signal: Union[Signal, Dict[str, Any]]) -> bool:
+        if not self.enabled:
+            return False
+        if isinstance(signal, dict):
+            raise TypeError("SqliteSignalHistory expects a Signal instance")
+        return self.repository.save(signal)
+
+    def load_all(self) -> List[Dict[str, Any]]:
+        return self.repository.recent(limit=10000)
+
+    def tail(self, count: int = 20) -> List[Dict[str, Any]]:
+        return list(reversed(self.repository.recent(limit=count)))
+
+    def count(self) -> int:
+        return self.repository.count()
+
+    def last_timestamp(self, scanner_id: str, symbol: str) -> Optional[datetime]:
+        return self.repository.last_timestamp(scanner_id, symbol)
+
+    def stats(self) -> Dict[str, int]:
+        return self.repository.stats()
+
+
+def build_signal_history(
+    backend: str,
+    jsonl_path: Union[str, Path],
+    sqlite_path: Union[str, Path],
+    enabled: bool = True,
+) -> Union[SignalHistory, SqliteSignalHistory]:
+    """Factory used by the composition root."""
+    if not enabled:
+        return SignalHistory(path=jsonl_path, enabled=False)
+    if backend == "sqlite":
+        return SqliteSignalHistory(SignalRepository(Database(sqlite_path)), enabled=True)
+    return SignalHistory(path=jsonl_path, enabled=True)
