@@ -105,3 +105,17 @@ def flat_volumes(count: int, spike_index: int = -1, spike: float = 1800.0, base:
     volumes = [base] * count
     volumes[spike_index] = spike
     return volumes
+
+
+def ema_pullback_long_closes() -> List[float]:
+    """Uptrend, 4-bar pullback, then a candle that reclaims the fast EMA."""
+    base = [100 + 0.25 * index for index in range(120)]
+    top = base[-1]
+    return base + segment(top, top - 3.0, 4) + [top]
+
+
+def ema_pullback_short_closes() -> List[float]:
+    """Downtrend, 4-bar bounce, then a candle that loses the fast EMA."""
+    base = [130 - 0.25 * index for index in range(120)]
+    bottom = base[-1]
+    return base + segment(bottom, bottom + 3.0, 4) + [bottom]

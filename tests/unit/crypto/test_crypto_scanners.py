@@ -2,6 +2,8 @@ from asta.core.signal_model import Market, SignalType
 from tests.fixtures.market_data import (
     bullish_divergence_closes,
     crypto_breakout_closes,
+    ema_pullback_long_closes,
+    ema_pullback_short_closes,
     make_context,
     volume_spike_closes,
 )
@@ -97,3 +99,52 @@ def test_crypto_scanner_needs_enough_candles(scanners):
     context = make_context(Market.CRYPTO, [100.0] * 20, symbol="SOLUSDT")
     with pytest.raises(InsufficientDataError):
         scanner.scan(context)
+
+
+def test_cxs004_detects_trend_pullback_long(scanners):
+    scanner = scanners["CXS004_EMA_PULLBACK"]
+    context = make_context(Market.CRYPTO, ema_pullback_long_closes(), symbol="BTCUSDT")
+    signals = scanner.scan(context)
+
+    assert len(signals) == 1
+    signal = signals[0]
+    assert signal.signal_type is SignalType.LONG
+    assert signal.confidence >= 0.55
+    assert 38.0 <= signal.indicators["rsi_low"] <= 52.0
+    assert "Uptrend pullback" in signal.reason
+    assert signal.indicators["ema_trend"] < signal.price
+
+
+def test_cxs004_detects_trend_pullback_short(scanners):
+    scanner = scanners["CXS004_EMA_PULLBACK"]
+    context = make_context(Market.CRYPTO, ema_pullback_short_closes(), symbol="ETHUSDT")
+    signals = scanner.scan(context)
+
+    assert len(signals) == 1
+    assert signals[0].signal_type is SignalType.SHORT
+    assert "Downtrend pullback" in signals[0].reason
+
+
+def test_cxs004_stays_quiet_without_a_trend(scanners):
+    scanner = scanners["CXS004_EMA_PULLBACK"]
+    context = make_context(Market.CRYPTO, [100.0] * 130, symbol="BTCUSDT")
+    assert scanner.scan(context) == []
+
+
+def test_cxs004_stays_quiet_when_pullback_is_too_deep(scanners):
+    scanner = scanners["CXS004_EMA_PULLBACK"]
+    from tests.fixtures.market_data import segment
+
+    base = [100 + 0.25 * index for index in range(120)]
+    closes = base + segment(base[-1], base[-1] - 18, 8) + [base[-1] - 15]
+    assert scanner.scan(make_context(Market.CRYPTO, closes, symbol="BTCUSDT")) == []
+
+
+def test_cxs004_needs_enough_candles(scanners):
+    import pytest
+
+    from asta.utils.exceptions import InsufficientDataError
+
+    scanner = scanners["CXS004_EMA_PULLBACK"]
+    with pytest.raises(InsufficientDataError):
+        scanner.scan(make_context(Market.CRYPTO, [100.0] * 60, symbol="BTCUSDT"))

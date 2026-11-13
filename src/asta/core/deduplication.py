@@ -7,12 +7,13 @@ candles of the scanner timeframe, bounded by a configured maximum.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from datetime import datetime
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from asta.core.signal_model import Signal
 from asta.storage.cache import TTLCache
 from asta.utils.logger import get_logger
-from asta.utils.time_utils import timeframe_to_seconds
+from asta.utils.time_utils import parse_datetime, timeframe_to_seconds, utcnow
 
 
 class DeduplicationStore:
@@ -46,6 +47,37 @@ class DeduplicationStore:
     def release(self, signal: Signal) -> None:
         """Undo a claim (used when validation later fails)."""
         self.cache.delete(signal.dedup_key)
+
+    def warm_from_history(
+        self, records: Iterable[Dict[str, Any]], now: Optional[datetime] = None
+    ) -> int:
+        """Re-claim keys for signals still inside their dedup window.
+
+        The in-memory cache dies with the process, so without this a restart would
+        re-alert the same setup (observed on a 15m volume spike).
+        """
+        now = now or utcnow()
+        warmed = 0
+        for record in records:
+            try:
+                key = "{}:{}:{}:{}:{}".format(
+                    record["market"],
+                    record["scanner_id"],
+                    str(record["symbol"]).upper(),
+                    record["timeframe"],
+                    record["signal_type"],
+                )
+                timestamp = parse_datetime(str(record["timestamp"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            window = self.window_for(str(record.get("timeframe", "")))
+            remaining = window - (now - timestamp).total_seconds()
+            if remaining > 0:
+                self.cache.set(key, record.get("signal_id", "warm"), ttl=remaining)
+                warmed += 1
+        if warmed:
+            self.logger.info("dedup cache warmed from history", extra={"keys": warmed})
+        return warmed
 
     def purge(self) -> int:
         return self.cache.purge()

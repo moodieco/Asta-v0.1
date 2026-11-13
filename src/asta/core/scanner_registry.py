@@ -24,6 +24,25 @@ from asta.utils.logger import get_logger
 
 logger = get_logger("asta.registry")
 
+#: LogRecord reserves names like "module", "name", "args"; using them in `extra`
+#: raises KeyError while logging, which would mask the real import error.
+_RESERVED_LOG_KEYS = {
+    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
+    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
+    "created", "msecs", "relativeCreated", "thread", "threadName",
+    "processName", "process", "message", "asctime",
+}
+
+
+def log_discovery_error(name: str) -> None:
+    """Report a package that failed to import during discovery (never raises)."""
+    payload = {"package": name}
+    payload = {key: value for key, value in payload.items() if key not in _RESERVED_LOG_KEYS}
+    try:
+        logger.error("package import failed during discovery", extra=payload)
+    except Exception:  # noqa: BLE001 - discovery must keep going
+        pass
+
 #: Global class registry populated by ``@register_scanner``.
 SCANNER_CLASSES: Dict[str, Type[ScannerBase]] = {}
 
@@ -81,11 +100,8 @@ class ScannerRegistry:
         for package_name in packages:
             package = importlib.import_module(package_name)
 
-            def _walk_error(name: str) -> None:
-                logger.error("package import failed during discovery", extra={"module": name})
-
             for module_info in pkgutil.walk_packages(
-                package.__path__, prefix=package_name + ".", onerror=_walk_error
+                package.__path__, prefix=package_name + ".", onerror=log_discovery_error
             ):
                 if not module_info.name.endswith(".scanner"):
                     continue

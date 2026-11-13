@@ -92,6 +92,8 @@ class AstaApp:
             window_seconds=self.config.storage.dedup_window_seconds,
             cache=TTLCache(default_ttl=self.config.storage.dedup_window_seconds),
         )
+        seeded = deduplication.warm_from_history(history.tail(1000))
+
         validator = SignalValidator(
             min_confidence=self.config.validator.min_confidence,
             max_age_seconds=self.config.validator.max_signal_age_seconds,
@@ -139,6 +141,7 @@ class AstaApp:
                 "markets": [m.value for m in Market if market_manager.is_enabled(m)],
                 "dry_run": self.config.dry_run,
                 "storage": self.config.storage.backend,
+                "dedup_seeded": seeded,
                 "webhooks": [m.value for m in channels.configured_markets()],
             },
         )

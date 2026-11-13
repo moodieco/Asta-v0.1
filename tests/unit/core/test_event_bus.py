@@ -44,3 +44,13 @@ def test_unsubscribe_and_subscriber_count():
     assert bus.subscribers("x") == 1
     bus.unsubscribe("x", handler)
     assert bus.subscribers("x") == 0
+
+
+def test_to_dict_uses_event_key_not_name():
+    # "name" is reserved on LogRecord and raised KeyError when passed as log extra.
+    bus = EventBus()
+    event = bus.publish("signal.accepted", symbol="BTCUSDT")
+    payload = event.to_dict()
+    assert payload["event"] == "signal.accepted"
+    assert "name" not in payload
+    assert payload["symbol"] == "BTCUSDT"

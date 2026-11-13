@@ -1,0 +1,20 @@
+id: CXS004_EMA_PULLBACK
+name: EMA Pullback
+market: crypto
+timeframe: 1h
+enabled: true
+symbols: []          # empty -> use the market universe from config/markets.yaml
+description: >
+  Buys the first push out of a shallow pullback inside an uptrend (price above the
+  trend EMA, RSI reset into 38-52, bullish candle reclaiming the fast EMA), and the
+  mirror for downtrends. Trend continuation, not reversal.
+params:
+  fast_period: 20
+  trend_period: 100
+  rsi_period: 14
+  rsi_min: 38.0
+  rsi_max: 52.0
+  pullback_lookback: 6
+  min_body_ratio: 0.3
+  min_slope: 0.0005
+  min_confidence: 0.55

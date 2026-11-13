@@ -18,7 +18,7 @@ Shipped:
 - [x] Market defaults shipped in code (`market_config.yaml`, `universe.py`) with
       market-specific indicator helpers (sessions, volume percentile, overnight gaps)
 - [x] Tooling: CLI, 5 scripts, validate/test/status/inspect, offline demo
-- [x] 122 tests across unit/integration/e2e; CI: pytest matrix + ruff
+- [x] 130 tests across unit/integration/e2e; CI: pytest matrix + ruff
 
 Known limitations:
 

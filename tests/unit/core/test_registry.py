@@ -1,7 +1,11 @@
 import pytest
 
 from asta.core.scanner_base import ScannerBase, ScannerConfig
-from asta.core.scanner_registry import SCANNER_CLASSES, register_scanner
+from asta.core.scanner_registry import (
+    SCANNER_CLASSES,
+    log_discovery_error,
+    register_scanner,
+)
 from asta.core.signal_model import Market
 from asta.utils.exceptions import ConfigurationError
 
@@ -11,6 +15,7 @@ EXPECTED_IDS = {
     "CXS001_RSI_DIVERGENCE",
     "CXS002_VOLUME_SPIKE",
     "CXS003_BREAKOUT_TREND",
+    "CXS004_EMA_PULLBACK",
     "STS001_EMA_TREND",
     "STS002_BREAKOUT_TREND",
 }
@@ -86,3 +91,9 @@ def test_build_all_skips_configs_without_classes(scanner_registry):
     orphan = ScannerConfig(id="ORPHAN_001", name="Orphan", market="stock")
     scanners = scanner_registry.build_all({**configs, "ORPHAN_001": orphan})
     assert "ORPHAN_001" not in [scanner.id for scanner in scanners]
+
+
+def test_discovery_error_logging_does_not_raise():
+    # "module" is reserved on LogRecord; logging it in `extra` used to raise KeyError
+    # and hide the real import error.
+    log_discovery_error("asta.markets.crypto.scanners.BROKEN.scanner")

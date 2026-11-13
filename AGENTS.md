@@ -18,9 +18,9 @@ Instructions for AI coding agents and humans working in this repository.
 
 ```bash
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q              # 122 tests, must stay green
+.venv/bin/python -m pytest -q              # 130 tests, must stay green
 .venv/bin/python scripts/validate_config.py
-.venv/bin/asta --list-scanners             # discovery must still find 7 scanners
+.venv/bin/asta --list-scanners             # discovery must still find every scanner
 .venv/bin/asta --once --dry-run            # errors must be explainable
 .venv/bin/ruff check src tests scripts     # lint
 ```

@@ -16,13 +16,13 @@ providers ──► data_service ──► scanners ──► signal_manager ─
 | Core (contracts, registry, manager, scheduler, event bus) | done |
 | Services (data, analysis, notification) | done |
 | Providers: Binance crypto, OANDA forex, Yahoo stock | done |
-| Scanners: 2 forex, 3 crypto, 2 stock | done |
+| Scanners: 2 forex, 4 crypto, 2 stock | done |
 | Signal pipeline: validate, dedupe, history, delivery accounting | done |
 | Storage: JSONL or SQLite (switch with one config value) | done |
 | Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
 | Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
 | Tooling: CLI, 5 scripts, CI (tests + lint) | done |
-| Tests | 122 passing |
+| Tests | 130 passing |
 
 ## Quickstart (Bahasa Indonesia)
 
@@ -69,6 +69,7 @@ Setiap scanner punya folder sendiri berisi `scanner.py`, `config.yaml`, dan `REA
 | `CXS001_RSI_DIVERGENCE` | crypto | 1h | RSI divergence + volume gate |
 | `CXS002_VOLUME_SPIKE` | crypto | 15m | 3x volume spike, directional body |
 | `CXS003_BREAKOUT_TREND` | crypto | 1h | 30-bar breakout + volume + ATR cap |
+| `CXS004_EMA_PULLBACK` | crypto | 1h | trend pullback continuation (EMA20/100 + RSI reset) |
 | `STS001_EMA_TREND` | stock | 1d | EMA cross aligned with EMA200 |
 | `STS002_BREAKOUT_TREND` | stock | 1d | 40-bar breakout + volume + gap |
 
@@ -84,6 +85,7 @@ python scripts/test_connections.py      # provider + webhook connectivity (--sen
 python scripts/scanner_status.py        # inventory, health, recent signals
 python scripts/inspect_market.py --market crypto --symbols BTCUSDT --timeframes 1h
 python scripts/scan_once.py             # offline demo with synthetic candles
+python scripts/signal_frequency.py --market crypto   # alerts/day per scanner (history replay)
 ```
 
 ## Configuration

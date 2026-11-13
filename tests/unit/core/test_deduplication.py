@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from asta.core.deduplication import DeduplicationStore
 from asta.core.signal_model import Market, Signal, SignalType
@@ -68,3 +68,40 @@ def test_release_allows_retry():
     store.check_and_register(signal)
     store.release(signal)
     assert store.check_and_register(signal)[0] is True
+
+
+def test_warm_from_history_blocks_duplicate_after_restart():
+    clock = FakeClock()
+    now = datetime.now(timezone.utc)
+    record = {
+        "signal_id": "abc123",
+        "market": "crypto",
+        "scanner_id": "CXS001_RSI_DIVERGENCE",
+        "symbol": "btcusdt",
+        "timeframe": "1h",
+        "signal_type": "long",
+        "timestamp": now.isoformat(),
+    }
+    store = DeduplicationStore(
+        window_seconds=3600, cache=TTLCache(3600, clock=clock)
+    )
+    assert store.warm_from_history([record], now=now) == 1
+
+    # the same setup, restarted process, must be treated as duplicate
+    signal = Signal(
+        scanner_id="CXS001_RSI_DIVERGENCE",
+        scanner_name="RSI Divergence",
+        market=Market.CRYPTO,
+        symbol="BTCUSDT",
+        timeframe="1h",
+        signal_type=SignalType.LONG,
+        reason="divergence between price pivots and RSI",
+        confidence=0.7,
+        timestamp=now + timedelta(seconds=60),
+    )
+    assert store.is_duplicate(signal) is True
+
+    # stale records (outside the window) are not warmed
+    old = dict(record, timestamp=(now - timedelta(days=2)).isoformat())
+    fresh_store = DeduplicationStore(window_seconds=3600, cache=TTLCache(3600, clock=clock))
+    assert fresh_store.warm_from_history([old], now=now) == 0

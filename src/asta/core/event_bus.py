@@ -25,7 +25,8 @@ class Event:
     timestamp: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"name": self.name, "timestamp": self.timestamp.isoformat(), **self.payload}
+        # "name" is reserved on LogRecord, so the payload key is "event".
+        return {"event": self.name, "timestamp": self.timestamp.isoformat(), **self.payload}
 
 
 class EventBus:

@@ -107,7 +107,7 @@ def test_app_runs_a_full_cycle_and_persists_signals(tmp_path):
     assert health["events"] >= 2
 
     inventory = app.scanner_inventory()
-    assert len(inventory) == 7
+    assert len(inventory) == 8
     assert {item["market"] for item in inventory} == {"forex", "crypto", "stock"}
     app.close()
 

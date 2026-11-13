@@ -53,7 +53,7 @@ from asta.markets.crypto.strategies.my_setup import CryptoMySetupStrategy
 
 @register_scanner
 class MySetupScanner(ScannerBase):
-    id = "CXS004_MY_SETUP"
+    id = "CXS099_MY_SETUP"
     name = "My Setup"
     market = Market.CRYPTO
     default_timeframe = "1h"
@@ -72,7 +72,7 @@ class MySetupScanner(ScannerBase):
 ## 4. config.yaml
 
 ```yaml
-id: CXS004_MY_SETUP
+id: CXS099_MY_SETUP
 name: My Setup
 market: crypto
 timeframe: 1h
