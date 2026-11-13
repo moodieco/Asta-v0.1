@@ -18,3 +18,8 @@ data/history/*
 data/logs/*
 !data/logs/.gitkeep
 *.log
+
+# google credentials
+*service-account*.json
+*service_account*.json
+secrets/

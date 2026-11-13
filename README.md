@@ -22,13 +22,13 @@ providers ──► data_service ──► scanners ──► signal_manager ─
 | Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
 | Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
 | Tooling: CLI, 5 scripts, CI (tests + lint) | done |
-| Tests | 137 passing |
+| Tests | 139 passing |
 
 ## Quickstart (Bahasa Indonesia)
 
 ```bash
 cd ~/Projects/asta-v0.1
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev,sheets]"
 cp .env.example .env                 # webhook Discord (+ token OANDA kalau dipakai)
 .venv/bin/asta --health              # provider, storage, webhook
 .venv/bin/asta --once --dry-run      # satu siklus, tidak kirim ke Discord

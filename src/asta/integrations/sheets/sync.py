@@ -13,7 +13,11 @@ from typing import Any, Dict
 
 from asta.integrations.sheets.base import SheetWriter, signal_to_row
 from asta.integrations.sheets.csv_writer import CsvSheetWriter
-from asta.integrations.sheets.google_sheets import GoogleSheetsAuth, GoogleSheetsWriter
+from asta.integrations.sheets.google_sheets import (
+    GoogleServiceAccountAuth,
+    GoogleSheetsAuth,
+    GoogleSheetsWriter,
+)
 from asta.utils.exceptions import SheetsError
 from asta.utils.logger import get_logger
 from asta.utils.time_utils import isoformat, utcnow
@@ -22,7 +26,10 @@ from asta.utils.time_utils import isoformat, utcnow
 def build_sheet_writer(settings: Any, project_root: Path) -> SheetWriter:
     """Instantiate the configured driver."""
     if settings.driver == "google":
-        auth = GoogleSheetsAuth(Path(settings.token_path).expanduser())
+        if getattr(settings, "service_account_path", ""):
+            auth = GoogleServiceAccountAuth(Path(settings.service_account_path).expanduser())
+        else:
+            auth = GoogleSheetsAuth(Path(settings.token_path).expanduser())
         return GoogleSheetsWriter(
             auth,
             spreadsheet_id=settings.spreadsheet_id,
@@ -51,18 +58,37 @@ class SheetSyncService:
         self._lock = threading.Lock()
 
     # -- state ------------------------------------------------------------
-    def _load_state(self) -> Dict[str, Any]:
+    def _read_raw(self) -> Dict[str, Any]:
         if not self.state_path.exists():
-            return {"last_recorded_at": "", "total_rows": 0, "updated_at": ""}
+            return {"drivers": {}}
         try:
-            return json.loads(self.state_path.read_text(encoding="utf-8"))
+            raw = json.loads(self.state_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             self.logger.warning("sync state is corrupt, starting from the beginning")
-            return {"last_recorded_at": "", "total_rows": 0, "updated_at": ""}
+            return {"drivers": {}}
+        if "drivers" not in raw:
+            # legacy flat file: it belonged to whichever driver wrote it
+            legacy = {
+                "last_recorded_at": raw.get("last_recorded_at", ""),
+                "total_rows": int(raw.get("total_rows", 0)),
+                "updated_at": raw.get("updated_at", ""),
+            }
+            has_data = bool(legacy["last_recorded_at"] or legacy["total_rows"])
+            # before per-driver cursors only the csv driver existed
+            return {"drivers": {"csv": legacy} if has_data else {}}
+        return raw
+
+    def _load_state(self) -> Dict[str, Any]:
+        raw = self._read_raw()
+        return raw["drivers"].setdefault(
+            self.writer.name, {"last_recorded_at": "", "total_rows": 0, "updated_at": ""}
+        )
 
     def _save_state(self, state: Dict[str, Any]) -> None:
+        raw = self._read_raw()
+        raw["drivers"][self.writer.name] = state
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        self.state_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
 
     def status(self) -> Dict[str, Any]:
         state = self._load_state()

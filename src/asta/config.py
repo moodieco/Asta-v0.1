@@ -92,6 +92,7 @@ class SheetsSettings(BaseModel):
     sheet_name: str = "Signals"
     create_if_missing: bool = True
     token_path: str = "~/.hermes/google_token.json"
+    service_account_path: str = ""
     batch_size: int = 200
     auto_sync: bool = True
 

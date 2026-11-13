@@ -28,7 +28,12 @@ from asta.utils.logger import get_logger
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SHEETS_BASE = "https://sheets.googleapis.com/v4"
+DRIVE_BASE = "https://www.googleapis.com/drive/v3"
 SCOPES = ("https://www.googleapis.com/auth/spreadsheets",)
+SCOPES_SERVICE_ACCOUNT = (
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+)
 
 
 class GoogleSheetsAuth:
@@ -133,6 +138,84 @@ class GoogleSheetsAuth:
         return parsed.timestamp()
 
 
+class GoogleServiceAccountAuth:
+    """Auth from a service-account JSON key (server-to-server, no browser)."""
+
+    def __init__(self, key_path: Path, scopes=SCOPES_SERVICE_ACCOUNT):
+        self.key_path = Path(key_path).expanduser()
+        self.scopes = tuple(scopes)
+        self._credentials = None
+        self.logger = get_logger("asta.sheets.service_account")
+
+    def _build(self):
+        if not self.key_path.exists():
+            raise SheetsError(
+                "service account key not found at {} (set sheets.service_account_path)".format(
+                    self.key_path
+                )
+            )
+        try:
+            from google.oauth2 import service_account
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise SheetsError(
+                "google-auth is required for service accounts: pip install 'asta[sheets]'"
+            ) from exc
+        credentials = service_account.Credentials.from_service_account_file(
+            str(self.key_path), scopes=self.scopes
+        )
+        self._credentials = credentials
+        return credentials
+
+    def access_token(self, force_refresh: bool = False) -> str:
+        from google.auth.transport.requests import Request
+
+        credentials = self._credentials or self._build()
+        if force_refresh or not credentials.valid:
+            credentials.refresh(Request())
+        if not credentials.token:
+            raise SheetsError("service account did not return a token")
+        return credentials.token
+
+    def close(self) -> None:
+        self._credentials = None
+
+
+class GoogleDriveSharer:
+    """Shares a spreadsheet owned by the service account with a real user."""
+
+    def __init__(self, auth, base_url: str = DRIVE_BASE, client: Optional[httpx.Client] = None):
+        self.auth = auth
+        self.base_url = base_url.rstrip("/")
+        self._client = client
+        self._owns_client = client is None
+
+    @property
+    def client(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(timeout=20)
+            self._owns_client = True
+        return self._client
+
+    def share(self, file_id: str, email: str, role: str = "writer", notify: bool = False) -> Dict[str, Any]:
+        token = self.auth.access_token()
+        response = self.client.post(
+            "{}/files/{}/permissions".format(self.base_url, file_id),
+            headers={"Authorization": "Bearer {}".format(token)},
+            params={"sendNotificationEmail": str(bool(notify)).lower()},
+            json={"type": "user", "role": role, "emailAddress": email},
+        )
+        if response.status_code >= 400:
+            raise SheetsError(
+                "drive share failed (HTTP {}): {}".format(response.status_code, response.text[:200])
+            )
+        return response.json() if response.content else {}
+
+    def close(self) -> None:
+        if self._client is not None and self._owns_client:
+            self._client.close()
+        self._client = None
+
+
 class GoogleSheetsWriter(SheetWriter):
     name = "google"
 
@@ -199,7 +282,18 @@ class GoogleSheetsWriter(SheetWriter):
             "properties": {"title": title or self.title},
             "sheets": [{"properties": {"title": self.sheet_name}}],
         }
-        data = self._request("POST", "{}/spreadsheets".format(self.base_url), token, json=payload)
+        try:
+            data = self._request(
+                "POST", "{}/spreadsheets".format(self.base_url), token, json=payload
+            )
+        except SheetsError as exc:
+            if "storage quota" in str(exc).lower() or "permission" in str(exc).lower():
+                raise SheetsError(
+                    "service accounts cannot create Drive files (no storage quota). "
+                    "Create a Google Sheet yourself, share it with the service account email "
+                    "as Editor, then put its id in config/sheets.yaml: spreadsheet_id."
+                ) from exc
+            raise
         spreadsheet_id = data.get("spreadsheetId")
         if not spreadsheet_id:
             raise SheetsError("create spreadsheet returned no id")

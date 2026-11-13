@@ -60,3 +60,23 @@ def test_sync_appends_only_new_rows_and_persists_cursor(tmp_path):
     third = restarted.sync_once()
     assert third["appended"] == 1
     assert third["total_rows"] == 3
+
+
+def test_drivers_keep_independent_cursors(tmp_path):
+    records = [record(1, "2026-11-13T20:00:01Z")]
+
+    class NamedWriter(CsvSheetWriter):
+        def __init__(self, name, path):
+            super().__init__(path)
+            self.name = name
+
+    state = tmp_path / "state.json"
+    csv_writer = NamedWriter("csv", tmp_path / "a.csv")
+    csv_service = SheetSyncService(csv_writer, FakeHistory(records), state)
+    assert csv_service.sync_once()["appended"] == 1
+
+    google_writer = NamedWriter("google", tmp_path / "b.csv")
+    google_service = SheetSyncService(google_writer, FakeHistory(records), state)
+    # a different driver starts from scratch, so the same rows are exported there too
+    assert google_service.sync_once()["appended"] == 1
+    assert google_service.sync_once()["appended"] == 0

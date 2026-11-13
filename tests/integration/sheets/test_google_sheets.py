@@ -126,3 +126,30 @@ def test_missing_token_file_is_actionable(tmp_path, stub):
     with pytest.raises(SheetsError) as exc:
         writer.append_rows([["row"]])
     assert "token not found" in str(exc.value)
+
+
+def test_service_account_quota_error_is_actionable():
+    from asta.utils.exceptions import SheetsError
+
+    class QuotaAuth:
+        def access_token(self, force_refresh=False):
+            return "tok"
+
+        def close(self):
+            pass
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            403, json={"error": {"message": "Service Accounts do not have storage quota."}}
+        )
+    )
+    writer = GoogleSheetsWriter(
+        QuotaAuth(),
+        spreadsheet_id="",
+        create_if_missing=True,
+        client=httpx.Client(transport=transport),
+        base_url="https://sheets.googleapis.com/v4",
+    )
+    with pytest.raises(SheetsError) as exc:
+        writer.ensure_ready()
+    assert "service account" in str(exc.value).lower()

@@ -9,6 +9,7 @@ permissions and executes no orders.
 |---|---|---|
 | `DISCORD_WEBHOOK_*` | `.env` only | treated as credentials: anyone with the URL can post |
 | `OANDA_API_TOKEN` | `.env` only | practice token is enough for V0.1 |
+| Google service account key | `~/.asta/google_service_account.json` (0600) | outside the repo; delete + recreate if leaked |
 
 * `.env` is gitignored and created with `0600` permissions.
 * YAML only references secrets as `${VAR}`; the loader expands them in memory.
