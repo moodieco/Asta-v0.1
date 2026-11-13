@@ -57,6 +57,15 @@ class DiscordRouter:
         )
         return result
 
+    def route_sample(self, signal: Signal) -> DeliveryResult:
+        webhook = self.channels.webhook_for(signal.market)
+        payload = build_payload(signal, sample=True)
+        if self.dry_run:
+            return DeliveryResult(ok=True, dry_run=True)
+        if not webhook:
+            return DeliveryResult(ok=False, error="no webhook configured for {}".format(signal.market.value))
+        return self.client.post(webhook, payload)
+
     def route_many(self, signals: List[Signal]) -> List[DeliveryResult]:
         return [self.route(signal) for signal in signals]
 

@@ -4,8 +4,11 @@ from asta.core.signal_model import Market, Signal, SignalType
 from asta.integrations.discord.embed_builder import (
     LONG_COLOR,
     SHORT_COLOR,
+    TEST_COLOR,
     build_payload,
     build_signal_embed,
+    build_test_embed,
+    build_test_payload,
     format_price,
 )
 
@@ -66,3 +69,19 @@ def test_reason_is_truncated_to_discord_limit():
     long_reason = "x" * 5000
     signal = signal.model_copy(update={"reason": long_reason})
     assert len(build_signal_embed(signal)["description"]) == 4096
+
+
+def test_test_alert_is_clearly_labelled():
+    embed = build_test_embed(Market.CRYPTO)
+    assert embed["title"] == "🧪 ASTA TEST ALERT · Crypto"
+    assert embed["color"] == TEST_COLOR
+    assert "No trading signal" in embed["description"]
+    assert embed["fields"][1]["value"] == "#crypto-signals"
+    payload = build_test_payload(Market.STOCK)
+    assert payload["embeds"][0]["title"].endswith("Stock")
+
+
+def test_sample_signal_is_labelled_sample():
+    embed = build_signal_embed(make_signal(), sample=True)
+    assert embed["title"].startswith("🧪 SAMPLE · 🟢 LONG")
+    assert embed["footer"]["text"].startswith("SAMPLE ALERT")

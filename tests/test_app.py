@@ -92,3 +92,20 @@ def test_app_cycle_is_deduplicated_on_second_run(tmp_path):
     assert second.signals_rejected >= 1
     assert second.signals_delivered == 0
     app.close()
+
+
+def test_app_test_alerts_skip_unconfigured_channels(tmp_path, monkeypatch):
+    history_path = tmp_path / "signals.jsonl"
+    config_path = tmp_path / "config" / "asta.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(CONFIG.format(history=str(history_path)))
+    monkeypatch.setenv("DISCORD_WEBHOOK_CRYPTO", "https://discord.com/api/webhooks/1/abc")
+    monkeypatch.setenv("DISCORD_WEBHOOK_FOREX", "")
+    monkeypatch.setenv("DISCORD_WEBHOOK_STOCK", "")
+
+    app = AstaApp.from_config(str(config_path), providers={Market.CRYPTO: StubCryptoProvider()})
+    app.build()
+
+    results = app.send_test_alerts()
+    assert [item["market"] for item in results] == ["crypto"]
+    app.close()

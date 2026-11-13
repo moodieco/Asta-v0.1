@@ -27,6 +27,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list-scanners", action="store_true", help="print discovered scanners")
     parser.add_argument("--health", action="store_true", help="print provider and credential health")
     parser.add_argument(
+        "--sample-alert",
+        action="store_true",
+        help="post a labelled sample signal card to each enabled market channel",
+    )
+    parser.add_argument(
+        "--test-alert",
+        action="store_true",
+        help="post a labelled connectivity test to every configured Discord webhook",
+    )
+    parser.add_argument(
         "--markets",
         default="",
         help="comma separated market filter, e.g. crypto,forex",
@@ -83,6 +93,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.health:
             print(json.dumps(app.health(), indent=2))
             return 0
+
+        if args.sample_alert:
+            results = app.send_sample_alerts()
+            print(json.dumps({"sample_alerts": results}, indent=2))
+            return 0 if all(item.get("ok") for item in results) else 1
+
+        if args.test_alert:
+            results = app.send_test_alerts()
+            print(json.dumps({"test_alerts": results}, indent=2))
+            return 0 if all(item.get("ok") for item in results) else 1
 
         if args.once:
             report = app.run_once(

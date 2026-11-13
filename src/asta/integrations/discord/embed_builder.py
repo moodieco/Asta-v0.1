@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from asta.core.signal_model import Signal, SignalType
-from asta.utils.time_utils import isoformat
+from asta.core.signal_model import Market, Signal, SignalType
+from asta.utils.time_utils import isoformat, utcnow
 
 LONG_COLOR = 0x2ECC71
 SHORT_COLOR = 0xE74C3C
@@ -23,13 +23,15 @@ def format_price(value: float) -> str:
     return "{:.8f}".format(value)
 
 
-def build_signal_embed(signal: Signal) -> Dict[str, Any]:
+def build_signal_embed(signal: Signal, sample: bool = False) -> Dict[str, Any]:
     color = LONG_COLOR if signal.signal_type is SignalType.LONG else SHORT_COLOR
     emoji = MARKET_EMOJI.get(signal.market.value, "📊")
 
     title = "{} {} · {} · {}".format(
         signal.signal_type.emoji, signal.signal_type.label, signal.symbol, signal.timeframe.upper()
     )
+    if sample:
+        title = "🧪 SAMPLE · " + title
 
     fields = [
         {"name": "Market", "value": "{} {}".format(emoji, signal.market.label), "inline": True},
@@ -48,20 +50,50 @@ def build_signal_embed(signal: Signal) -> Dict[str, Any]:
         )
         fields.append({"name": "Indicators", "value": rendered[:1024], "inline": False})
 
+    footer = "ASTA V0.1 · {} · {}".format(signal.scanner_name, signal.scanner_id)
+    if sample:
+        footer = "SAMPLE ALERT — format demo, not a trading signal · ASTA V0.1"
+
     return {
         "title": title[:256],
         "description": signal.reason[:4096],
         "color": color,
         "fields": fields,
-        "footer": {
-            "text": "ASTA V0.1 · {} · {}".format(signal.scanner_name, signal.scanner_id)[:2048]
-        },
+        "footer": {"text": footer[:2048]},
         "timestamp": isoformat(signal.timestamp),
     }
 
 
-def build_payload(signal: Signal, username: str = "ASTA") -> Dict[str, Any]:
-    return {"username": username, "embeds": [build_signal_embed(signal)]}
+def build_payload(signal: Signal, username: str = "ASTA", sample: bool = False) -> Dict[str, Any]:
+    return {"username": username, "embeds": [build_signal_embed(signal, sample=sample)]}
+
+
+TEST_COLOR = 0xE67E22
+
+
+def build_test_embed(market: Market) -> Dict[str, Any]:
+    """Deliberately labelled as a test so it can never be mistaken for a signal."""
+    emoji = MARKET_EMOJI.get(market.value, "📊")
+    return {
+        "title": "🧪 ASTA TEST ALERT · {}".format(market.label),
+        "description": (
+            "Webhook check from ASTA V0.1. If you can read this, {} alerts "
+            "will be delivered to this channel.\n\nNo trading signal is attached "
+            "to this message.".format(market.label)
+        ),
+        "color": TEST_COLOR,
+        "fields": [
+            {"name": "Market", "value": "{} {}".format(emoji, market.label), "inline": True},
+            {"name": "Channel", "value": "#{}-signals".format(market.value), "inline": True},
+            {"name": "Version", "value": "ASTA V0.1", "inline": True},
+        ],
+        "footer": {"text": "ASTA V0.1 · connectivity test"},
+        "timestamp": isoformat(utcnow()),
+    }
+
+
+def build_test_payload(market: Market, username: str = "ASTA") -> Dict[str, Any]:
+    return {"username": username, "embeds": [build_test_embed(market)]}
 
 
 def _short_number(value: float) -> str:

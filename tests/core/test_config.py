@@ -38,9 +38,10 @@ def write_config(tmp_path, text=CONFIG_YAML):
 def test_load_config_expands_env_and_resolves_paths(tmp_path, monkeypatch):
     monkeypatch.setenv("SIGNALS_PATH", str(tmp_path / "signals.jsonl"))
     monkeypatch.setenv("OANDA_API_TOKEN", "tok")
+    monkeypatch.delenv("ASTA_LOG_LEVEL", raising=False)
     path = write_config(tmp_path)
 
-    config = load_config(str(path))
+    config = load_config(str(path), env_file=tmp_path / "missing.env")
     assert config.log_level == "WARNING"
     assert config.markets["crypto"].normalized_symbols() == ["BTCUSDT", "ETHUSDT"]
     assert config.markets["forex"].enabled is False
@@ -57,8 +58,9 @@ def test_missing_config_raises(tmp_path):
 def test_project_root_is_parent_of_config_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("SIGNALS_PATH", "data/signals.jsonl")
     monkeypatch.setenv("OANDA_API_TOKEN", "")
+    monkeypatch.delenv("ASTA_LOG_LEVEL", raising=False)
     path = write_config(tmp_path)
-    config = load_config(str(path))
+    config = load_config(str(path), env_file=tmp_path / "missing.env")
     assert config.project_root == tmp_path
     assert config.resolve_path("data/signals.jsonl") == tmp_path / "data" / "signals.jsonl"
 
@@ -66,8 +68,9 @@ def test_project_root_is_parent_of_config_dir(tmp_path, monkeypatch):
 def test_dry_run_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("SIGNALS_PATH", "data/signals.jsonl")
     monkeypatch.setenv("OANDA_API_TOKEN", "")
+    monkeypatch.delenv("ASTA_LOG_LEVEL", raising=False)
     monkeypatch.setenv("ASTA_DRY_RUN", "1")
-    config = load_config(str(write_config(tmp_path)))
+    config = load_config(str(write_config(tmp_path)), env_file=tmp_path / "missing.env")
     assert config.dry_run is True
 
 

@@ -14,11 +14,12 @@ from asta.core.scanner_manager import CycleReport, ScannerManager
 from asta.core.scanner_registry import ScannerRegistry
 from asta.core.scanner_scheduler import ScannerScheduler
 from asta.core.signal_manager import SignalManager
-from asta.core.signal_model import Market
+from asta.core.signal_model import Market, Signal, SignalType
 from asta.core.signal_validator import SignalValidator
 from asta.integrations.discord.alert_manager import AlertManager
 from asta.integrations.discord.channel_config import ChannelConfig
 from asta.integrations.discord.discord_router import DiscordRouter
+from asta.integrations.discord.embed_builder import build_test_payload
 from asta.providers import build_providers
 from asta.providers.base import MarketDataProvider
 from asta.storage.cache import TTLCache
@@ -157,6 +158,74 @@ class AstaApp:
         except KeyboardInterrupt:  # pragma: no cover - interactive
             self.logger.info("interrupted, shutting down")
 
+    def send_test_alerts(self) -> List[dict]:
+        """Post a labelled connectivity test to every configured webhook."""
+        self.require_built()
+        assert self.alert_manager is not None
+        router = self.alert_manager.router
+        results: List[dict] = []
+        for market in Market:
+            webhook = router.channels.webhook_for(market)
+            if not webhook:
+                continue
+            payload = build_test_payload(market)
+            if self.config.dry_run:
+                results.append({"market": market.value, "ok": True, "dry_run": True})
+                continue
+            try:
+                outcome = router.client.post(webhook, payload)
+            except AstaError as exc:
+                results.append({"market": market.value, "ok": False, "error": str(exc)})
+                continue
+            results.append(
+                {
+                    "market": market.value,
+                    "ok": outcome.ok,
+                    "status": outcome.status_code,
+                    "attempts": outcome.attempts,
+                    "error": outcome.error,
+                }
+            )
+        return results
+
+    def send_sample_alerts(self) -> List[dict]:
+        """Post one clearly-labelled sample signal card per enabled market."""
+        self.require_built()
+        assert self.alert_manager is not None and self.market_manager is not None
+        router = self.alert_manager.router
+        results: List[dict] = []
+        for market in Market:
+            if not self.market_manager.is_enabled(market) or not router.channels.has(market):
+                continue
+            symbols = self.market_manager.symbols_for(market) or ["SAMPLE"]
+            signal = Signal(
+                scanner_id="{}_SAMPLE_ALERT".format(market.value.upper()[:2]),
+                scanner_name="Sample Alert",
+                market=market,
+                symbol=symbols[0],
+                timeframe="1h" if market is not Market.STOCK else "1d",
+                signal_type=SignalType.LONG,
+                reason=(
+                    "Sample signal card: this is what a real {} alert looks like — "
+                    "scanner id, symbol, timeframe, confidence, reason and indicators. "
+                    "No live scan produced this message.".format(market.label)
+                ),
+                confidence=0.76,
+                price=100.0,
+                strategy="Sample",
+                indicators={"rsi": 38.4, "volume_ratio": 2.1},
+                metadata={"sample": True},
+            )
+            try:
+                outcome = router.route_sample(signal)
+            except AstaError as exc:
+                results.append({"market": market.value, "ok": False, "error": str(exc)})
+                continue
+            results.append(
+                {"market": market.value, "ok": outcome.ok, "status": outcome.status_code, "error": outcome.error}
+            )
+        return results
+
     def scanner_inventory(self) -> List[dict]:
         manager = self.require_built()
         return [scanner.describe() for scanner in manager.all()]
@@ -168,7 +237,9 @@ class AstaApp:
             "environment": self.config.environment,
             "dry_run": self.config.dry_run,
             "scanners": len(manager),
-            "enabled_scanners": len(manager.enabled()),
+            "enabled_scanners": len(
+                [scanner for scanner in manager.enabled() if self.market_manager and self.market_manager.is_enabled(scanner.market)]
+            ),
             "providers": self.market_manager.health(),
             "webhooks": sorted(self.alert_manager.router.configured_markets()) if self.alert_manager else [],
             "signal_history": {
