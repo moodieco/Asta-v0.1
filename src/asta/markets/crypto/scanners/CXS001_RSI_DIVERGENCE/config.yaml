@@ -1,0 +1,20 @@
+id: CXS001_RSI_DIVERGENCE
+name: RSI Divergence
+market: crypto
+timeframe: 1h
+enabled: true
+symbols: []          # empty -> use the market default symbols from config/asta.yaml
+description: >
+  RSI divergence on crypto pairs with a volume expansion filter and wider RSI bands (30/70).
+params:
+  rsi_period: 14
+  lookback: 120
+  pivot_span: 2
+  min_rsi_delta: 2.0
+  max_pivot_age: 12
+  oversold: 30.0
+  overbought: 70.0
+  volume_confirm: true
+  min_volume_ratio: 1.0
+  min_confidence: 0.55
+

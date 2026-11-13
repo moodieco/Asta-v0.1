@@ -1,0 +1,17 @@
+id: FXS002_EMA_CROSSOVER
+name: EMA Crossover
+market: forex
+timeframe: 1h
+enabled: true
+symbols: []          # empty -> use the market default symbols from config/asta.yaml
+description: >
+  EMA(20) crossing EMA(50) with a 200 EMA trend context, on forex majors.
+params:
+  fast_period: 20
+  slow_period: 50
+  trend_period: 200
+  cross_lookback: 3
+  min_separation_pct: 0.0005
+  require_trend_alignment: false
+  min_confidence: 0.5
+

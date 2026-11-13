@@ -1,0 +1,14 @@
+id: CXS002_VOLUME_SPIKE
+name: Volume Spike
+market: crypto
+timeframe: 15m
+enabled: true
+symbols: []          # empty -> use the market default symbols from config/asta.yaml
+description: >
+  Flags a candle whose volume is at least 3x the 20-bar average with a directional body.
+params:
+  volume_period: 20
+  spike_multiplier: 3.0
+  min_body_ratio: 0.35
+  min_confidence: 0.5
+

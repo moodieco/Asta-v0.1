@@ -1,0 +1,18 @@
+id: FXS001_RSI_DIVERGENCE
+name: RSI Divergence
+market: forex
+timeframe: 1h
+enabled: true
+symbols: []          # empty -> use the market default symbols from config/asta.yaml
+description: >
+  Detects regular bullish/bearish divergence between price swing pivots and Wilder RSI on forex majors. No volume filter: FX tick volume is broker dependent.
+params:
+  rsi_period: 14
+  lookback: 120
+  pivot_span: 2
+  min_rsi_delta: 1.5
+  max_pivot_age: 12
+  oversold: 35.0
+  overbought: 65.0
+  min_confidence: 0.55
+

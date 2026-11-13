@@ -1,0 +1,16 @@
+id: CXS003_BREAKOUT_TREND
+name: Breakout Trend
+market: crypto
+timeframe: 1h
+enabled: true
+symbols: []          # empty -> use the market default symbols from config/asta.yaml
+description: >
+  30-bar range breakout with trend alignment, 1.2x volume expansion and an ATR extension cap.
+params:
+  breakout_lookback: 30
+  buffer_pct: 0.002
+  trend_period: 100
+  min_volume_ratio: 1.2
+  max_distance_atr: 2.5
+  min_confidence: 0.55
+

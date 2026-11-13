@@ -1,0 +1,16 @@
+id: STS001_EMA_TREND
+name: EMA Trend
+market: stock
+timeframe: 1d
+enabled: true
+symbols: []          # empty -> use the market default symbols from config/asta.yaml
+description: >
+  EMA(20)/EMA(50) cross that must agree with the EMA(200) trend on daily bars.
+params:
+  fast_period: 20
+  slow_period: 50
+  trend_period: 200
+  cross_lookback: 3
+  require_trend_alignment: true
+  min_confidence: 0.55
+
