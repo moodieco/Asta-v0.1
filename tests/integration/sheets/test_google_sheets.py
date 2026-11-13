@@ -15,6 +15,7 @@ from asta.integrations.sheets.google_sheets import GoogleSheetsAuth, GoogleSheet
 class StubGoogle(BaseHTTPRequestHandler):
     requests = []
     header_rows = 0
+    tab_titles = ["Signals"]
 
     def log_message(self, *args):  # silence
         return
@@ -35,6 +36,11 @@ class StubGoogle(BaseHTTPRequestHandler):
 
         if path == "/token":
             self._send({"access_token": "tok-1", "expires_in": 3600})
+        elif path.endswith(":batchUpdate"):
+            payload = json.loads(body)
+            title = payload["requests"][0]["addSheet"]["properties"]["title"]
+            StubGoogle.tab_titles.append(title)
+            self._send({"replies": [{}]})
         elif path == "/v4/spreadsheets":
             self._send({"spreadsheetId": "sheet-123", "spreadsheetUrl": "https://docs.google.com/x"})
         elif path.endswith(":append"):
@@ -51,6 +57,10 @@ class StubGoogle(BaseHTTPRequestHandler):
         if path.endswith("/values/Signals!A1"):
             values = [] if StubGoogle.header_rows == 0 else [HEADER]
             self._send({"values": values})
+        elif path.startswith("/v4/spreadsheets/sheet-123"):
+            self._send(
+                {"sheets": [{"properties": {"title": title}} for title in StubGoogle.tab_titles]}
+            )
         else:
             self._send({"error": "not found"}, status=404)
 
@@ -59,6 +69,7 @@ class StubGoogle(BaseHTTPRequestHandler):
 def stub(monkeypatch):
     StubGoogle.requests = []
     StubGoogle.header_rows = 0
+    StubGoogle.tab_titles = ["Signals"]
     server = HTTPServer(("127.0.0.1", 0), StubGoogle)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -153,3 +164,32 @@ def test_service_account_quota_error_is_actionable():
     with pytest.raises(SheetsError) as exc:
         writer.ensure_ready()
     assert "service account" in str(exc.value).lower()
+
+
+def test_missing_tab_is_created(tmp_path, stub):
+    StubGoogle.tab_titles = ["Sheet1"]
+    token_path = tmp_path / "token.json"
+    token_path.write_text(
+        json.dumps(
+            {
+                "token": "tok-1",
+                "refresh_token": "r",
+                "client_id": "c",
+                "client_secret": "s",
+                "expiry": "2999-01-01T00:00:00Z",
+            }
+        )
+    )
+    client = httpx.Client(timeout=5)
+    auth = GoogleSheetsAuth(token_path, client=client, token_url=stub + "/token")
+    writer = GoogleSheetsWriter(
+        auth,
+        spreadsheet_id="sheet-123",
+        sheet_name="Signals",
+        client=client,
+        base_url=stub + "/v4",
+    )
+    writer.ensure_ready()
+    paths = [p for _, p, _, _ in StubGoogle.requests]
+    assert "/v4/spreadsheets/sheet-123:batchUpdate" in paths
+    assert StubGoogle.header_rows == 1

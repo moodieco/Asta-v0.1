@@ -305,6 +305,29 @@ class GoogleSheetsWriter(SheetWriter):
     def _range(self) -> str:
         return "{}!A1".format(self.sheet_name)
 
+    def sheet_titles(self) -> List[str]:
+        token = self.auth.access_token()
+        data = self._request(
+            "GET",
+            "{}/spreadsheets/{}".format(self.base_url, self.spreadsheet_id),
+            token,
+            params={"fields": "sheets.properties.title"},
+        )
+        return [
+            (sheet.get("properties") or {}).get("title", "")
+            for sheet in data.get("sheets") or []
+        ]
+
+    def add_sheet_tab(self, title: str) -> None:
+        token = self.auth.access_token()
+        self._request(
+            "POST",
+            "{}/spreadsheets/{}:batchUpdate".format(self.base_url, self.spreadsheet_id),
+            token,
+            json={"requests": [{"addSheet": {"properties": {"title": title}}}]},
+        )
+        self.logger.info("sheet tab created", extra={"tab": title})
+
     def ensure_ready(self) -> None:
         if self._ready:
             return
@@ -312,6 +335,8 @@ class GoogleSheetsWriter(SheetWriter):
             if not self.create_if_missing:
                 raise SheetsError("sheets.spreadsheet_id is empty and create_if_missing is false")
             self.create_spreadsheet()
+        if self.sheet_name not in self.sheet_titles():
+            self.add_sheet_tab(self.sheet_name)
         token = self.auth.access_token()
         existing = self._request(
             "GET",
