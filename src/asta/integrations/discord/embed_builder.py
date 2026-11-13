@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from asta.core.signal_model import Market, Signal, SignalType
-from asta.utils.time_utils import isoformat, utcnow
+from asta.utils.time_utils import isoformat, short_datetime, utcnow
 
 LONG_COLOR = 0x2ECC71
 SHORT_COLOR = 0xE74C3C
@@ -49,7 +49,9 @@ def build_signal_embed(signal: Signal, sample: bool = False) -> Dict[str, Any]:
         fields.append({"name": "R:R", "value": "1:{:.2f}".format(signal.risk_reward), "inline": True})
     if signal.risk_pct is not None:
         fields.append({"name": "Risk", "value": "{:.2f}%".format(signal.risk_pct), "inline": True})
-    fields.append({"name": "Time", "value": isoformat(signal.timestamp), "inline": True})
+    fields.append(
+        {"name": "Time", "value": short_datetime(signal.timestamp) + " UTC", "inline": True}
+    )
 
     if signal.indicators:
         rendered = ", ".join(

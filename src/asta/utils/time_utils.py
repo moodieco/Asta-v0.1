@@ -74,6 +74,11 @@ def is_stale(timestamp: datetime, max_age_seconds: int, now: datetime = None) ->
     return age > max_age_seconds or age < -60  # allow 60s clock skew
 
 
+def short_datetime(timestamp: datetime) -> str:
+    """Compact display form: ``2026-11-13 22:17`` (UTC, minute precision)."""
+    return ensure_utc(timestamp).strftime("%Y-%m-%d %H:%M")
+
+
 def isoformat(timestamp: datetime) -> str:
     return ensure_utc(timestamp).isoformat().replace("+00:00", "Z")
 

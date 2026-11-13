@@ -93,3 +93,9 @@ def test_signal_age_seconds_is_positive():
         timestamp=datetime.now(timezone.utc) - timedelta(minutes=5),
     )
     assert 290 < signal.age_seconds < 320
+
+
+def test_short_datetime_is_compact_utc():
+    from asta.utils.time_utils import short_datetime
+
+    assert short_datetime(datetime(2026, 11, 13, 22, 17, 57, 952497, tzinfo=timezone.utc)) == "2026-11-13 22:17"

@@ -5,9 +5,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+from asta.utils.time_utils import parse_datetime, short_datetime
+
 HEADER: List[str] = [
-    "recorded_at",
-    "timestamp",
+    "recorded_at (UTC)",
+    "timestamp (UTC)",
     "market",
     "scanner_id",
     "symbol",
@@ -21,7 +23,7 @@ HEADER: List[str] = [
     "risk_pct",
     "atr",
     "levels_source",
-    "expires_at",
+    "expires_at (UTC)",
     "status",
     "realized_r",
     "bars_held",
@@ -31,6 +33,15 @@ HEADER: List[str] = [
     "signal_id",
     "source",
 ]
+
+
+def _short(value: Any) -> str:
+    if not value:
+        return ""
+    try:
+        return short_datetime(parse_datetime(str(value)))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _number(value: Any) -> Any:
@@ -55,8 +66,8 @@ def signal_to_row(record: Dict[str, Any]) -> List[Any]:
     price = record.get("price")
     confidence = record.get("confidence")
     return [
-        record.get("recorded_at", ""),
-        record.get("timestamp", ""),
+        _short(record.get("recorded_at")),
+        _short(record.get("timestamp")),
         record.get("market", ""),
         record.get("scanner_id", ""),
         record.get("symbol", ""),
@@ -70,7 +81,7 @@ def signal_to_row(record: Dict[str, Any]) -> List[Any]:
         _number(record.get("risk_pct")),
         _number(record.get("atr")),
         record.get("levels_source", ""),
-        record.get("expires_at") or "",
+        _short(record.get("expires_at")),
         record.get("status", ""),
         _number(record.get("realized_r")),
         _number(record.get("bars_held")),

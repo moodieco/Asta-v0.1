@@ -16,6 +16,16 @@ if str(ROOT / "src") not in sys.path:
 
 from asta.bootstrap import AstaApp  # noqa: E402
 from asta.utils.logger import configure_logging  # noqa: E402
+from asta.utils.time_utils import parse_datetime, short_datetime  # noqa: E402
+
+
+def _short(value) -> str:
+    if not value:
+        return "?"
+    try:
+        return short_datetime(parse_datetime(str(value)))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def main() -> int:
@@ -57,7 +67,7 @@ def main() -> int:
     for record in reversed(recent):
         print(
             "  {} {} {} {} conf={:.0%} {}".format(
-                record.get("timestamp", "?")[:19],
+                _short(record.get("timestamp")),
                 record.get("scanner_id", "?"),
                 record.get("symbol", "?"),
                 record.get("signal_type", "?"),

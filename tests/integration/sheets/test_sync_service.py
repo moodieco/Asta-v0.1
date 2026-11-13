@@ -80,3 +80,25 @@ def test_drivers_keep_independent_cursors(tmp_path):
     # a different driver starts from scratch, so the same rows are exported there too
     assert google_service.sync_once()["appended"] == 1
     assert google_service.sync_once()["appended"] == 0
+
+
+def test_rows_use_compact_date_time(tmp_path):
+    from asta.integrations.sheets.base import signal_to_row
+
+    row = signal_to_row(
+        {
+            "recorded_at": "2026-11-13T22:17:57.952497Z",
+            "timestamp": "2026-11-13T21:22:33.760983Z",
+            "expires_at": "2026-11-15T21:22:00Z",
+            "market": "crypto",
+            "scanner_id": "X",
+            "symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "signal_type": "long",
+            "confidence": 0.8,
+            "price": 100.0,
+        }
+    )
+    assert row[0] == "2026-11-13 22:17"
+    assert row[1] == "2026-11-13 21:22"
+    assert row[15] == "2026-11-15 21:22"
