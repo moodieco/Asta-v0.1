@@ -140,3 +140,36 @@ def test_parse_datetime_handles_nanoseconds():
     parsed = parse_datetime("2025-01-01T12:00:00.123456789Z")
     assert parsed.tzinfo is not None
     assert parsed.microsecond == 123456
+
+
+def test_filter_closed_candles_drops_the_forming_bar():
+    from datetime import timedelta
+
+    from asta.providers.base import MarketDataProvider
+    from tests.helpers import make_candles
+
+    candles = make_candles([100, 101, 102], timeframe="1h")
+    now = candles[-1].timestamp + timedelta(minutes=30)  # last bar still forming
+    closed = MarketDataProvider.filter_closed_candles(candles, "1h", now=now)
+    assert len(closed) == 2
+    assert closed[-1] is candles[-2]
+
+    # once the bar is complete it is kept
+    later = candles[-1].timestamp + timedelta(hours=1, minutes=1)
+    assert len(MarketDataProvider.filter_closed_candles(candles, "1h", now=later)) == 3
+
+
+def test_binance_skips_unclosed_last_kline():
+    import time
+
+    now_ms = int(time.time() * 1000)
+    closed_open = now_ms - 7200_000
+    forming_open = now_ms - 600_000
+    rows = [
+        [closed_open, "100.0", "101.0", "99.0", "100.5", "10.0", closed_open + 3599_999, "0", 0, "0", "0", "0"],
+        [forming_open, "100.5", "102.0", "100.0", "101.5", "5.0", now_ms + 3000_000, "0", 0, "0", "0", "0"],
+    ]
+    provider = BinanceProvider({}, client=client_for(lambda request: httpx.Response(200, json=rows)))
+    candles = provider.fetch_candles("BTCUSDT", "1h", 2)
+    assert len(candles) == 1
+    assert candles[0].close == 100.5

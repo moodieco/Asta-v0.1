@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -54,8 +55,11 @@ class BinanceProvider(MarketDataProvider):
                 "unexpected klines payload", provider=self.name, symbol=symbol
             )
         candles: List[Candle] = []
+        now_ms = int(time.time() * 1000)
         for row in payload:
             try:
+                if int(row[6]) > now_ms:  # kline not closed yet
+                    continue
                 candles.append(
                     Candle(
                         timestamp=datetime.fromtimestamp(int(row[0]) / 1000, tz=timezone.utc),

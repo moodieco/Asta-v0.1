@@ -60,7 +60,7 @@ class StockProvider(MarketDataProvider):
             },
             headers={"Accept": "application/json"},
         )
-        candles = self._parse(payload, ticker)
+        candles = self.filter_closed_candles(self._parse(payload, ticker), tf)
         if not candles:
             raise ProviderError(
                 "no usable candles returned", provider=self.name, symbol=ticker

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -11,7 +12,7 @@ import httpx
 from asta.core.signal_model import Candle, Market
 from asta.utils.exceptions import AstaError, ConfigurationError, ProviderError
 from asta.utils.logger import get_logger
-from asta.utils.time_utils import normalize_timeframe
+from asta.utils.time_utils import ensure_utc, normalize_timeframe, timeframe_to_seconds, utcnow
 
 RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
@@ -159,6 +160,25 @@ class MarketDataProvider(ABC):
                     except (TypeError, ValueError):
                         return None
         return None
+
+    @staticmethod
+    def filter_closed_candles(
+        candles: List[Candle], timeframe: str, now=None
+    ) -> List[Candle]:
+        """Drop trailing bars that are still forming.
+
+        Exchanges return the in-progress bar as the last row (Binance klines,
+        Yahoo chart). A scanner must never evaluate a bar whose close can still
+        change, otherwise the same symbol flips signals within one candle.
+        """
+        if not candles:
+            return []
+        now = now or utcnow()
+        seconds = timeframe_to_seconds(timeframe)
+        closed = list(candles)
+        while closed and (ensure_utc(closed[-1].timestamp) + timedelta(seconds=seconds)) > now:
+            closed.pop()
+        return closed
 
     def _require_config(self, keys: List[str]) -> None:
         missing = [key for key in keys if not self.settings.get(key)]
