@@ -42,6 +42,14 @@ candle close ──► scanner.evaluate ──► Signal ──► validator ─
 | `price` | last close of the evaluated candle (or the level that triggered it) |
 | `timestamp` | UTC; signal age must be ≤ `validator.max_signal_age_seconds` |
 | `indicators` | finite floats only; rendered in the alert |
+| `stop_loss` / `take_profit` | structural (pivot, breakout level) or ATR-based levels |
+| `risk_reward` | `abs(target-entry)/abs(entry-stop)`, rounded to 2 dp |
+| `risk_pct` | stop distance as % of entry, bounded by the risk config |
+| `atr` | ATR at signal time (14 periods by default) |
+| `levels_source` | `structure` when a setup level was used, `atr` otherwise |
+| `expires_at` | signal time + `max_bars` × timeframe |
+| `status` | `open` → `hit_tp` / `hit_sl` / `expired` |
+| `source` | `live` (scheduler) or `backfill` (historical replay) |
 
 Derived: `dedup_key = market:scanner_id:SYMBOL:timeframe:signal_type`,
 `signal_id = sha1(dedup_key + timestamp)[:12]`.
@@ -60,6 +68,9 @@ Derived: `dedup_key = market:scanner_id:SYMBOL:timeframe:signal_type`,
 | `stale_signal` | older than `max_signal_age_seconds` |
 | `future_signal` | more than 120 s ahead of now (clock skew guard) |
 | `bad_indicator` | non-finite indicator value |
+| `incomplete_levels` | only one of stop/target present |
+| `bad_levels` | long needs stop < entry < target (short mirrored) |
+| `bad_risk` | stop distance outside 0–10% of entry |
 
 ## Deduplication
 
@@ -67,6 +78,20 @@ Derived: `dedup_key = market:scanner_id:SYMBOL:timeframe:signal_type`,
 * Window: `min(2 × timeframe, storage.dedup_window_seconds)`; default max 3600 s.
 * Register happens *before* delivery; if validation failed the claim is released.
 * Deduplicated signals are counted in `signals_rejected`, never stored, never sent.
+
+## Risk levels
+
+Computed in `core/risk.py`:
+
+* **Stop** — structural when the setup provides one (RSI divergence pivot, breakout
+  level, pullback swing), otherwise `1.5 × ATR(14)`.
+* **Target** — `reward_ratio` (default 2R) beyond entry, or an explicit target.
+* **Expiry** — `max_bars` (default 48) candles after the signal.
+* Rejected when the stop is on the wrong side, closer than 0.1% or farther than 5%.
+
+Outcomes are scored by replaying subsequent candles (`outcome_for_signal`):
+target first → `hit_tp` (+1R), stop first → `hit_sl` (-1R), neither within
+`expires_at` → `expired` (0R). If one candle touches both, the stop wins.
 
 ## Confidence
 

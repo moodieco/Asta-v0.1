@@ -37,6 +37,21 @@ class CsvSheetWriter(SheetWriter):
                     writer.writerow(row)
         return len(rows)
 
+    def clear(self) -> None:
+        with self._lock:
+            if self.path.exists():
+                self.path.unlink()
+        self.ensure_ready()
+
+    def replace_all(self, rows: List[List[Any]]) -> int:
+        if not rows:
+            return 0
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            with self.path.open("w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle).writerows(rows)
+        return len(rows)
+
     def read_rows(self, limit: int = 0) -> List[List[str]]:
         if not self.path.exists():
             return []

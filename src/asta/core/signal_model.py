@@ -163,6 +163,27 @@ class Signal(BaseModel):
     indicators: Dict[str, float] = Field(default_factory=dict)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+    # -- risk levels (filled by the scanner, optional but recommended) -----
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    risk_reward: Optional[float] = None
+    risk_pct: Optional[float] = None
+    atr: Optional[float] = None
+    levels_source: str = ""
+    expires_at: Optional[datetime] = None
+    status: str = "open"
+    #: "live" for scheduler scans, "backfill" for historical replay
+    source: str = "live"
+
+    @field_validator("expires_at")
+    @classmethod
+    def _aware_expiry(cls, value):
+        return ensure_utc(value) if value is not None else None
+
+    @property
+    def entry_price(self) -> Optional[float]:
+        return self.price
+
     @field_validator("timestamp")
     @classmethod
     def _aware(cls, value: datetime) -> datetime:

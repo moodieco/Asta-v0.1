@@ -27,6 +27,12 @@ def make_signal(signal_type=SignalType.LONG, market=Market.CRYPTO, price=42123.4
         timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
         strategy="Volume Spike",
         indicators={"volume_ratio": 5.2, "body_ratio": 0.98},
+        stop_loss=price * 0.99,
+        take_profit=price * 1.02,
+        risk_reward=2.0,
+        risk_pct=1.0,
+        atr=price * 0.004,
+        levels_source="atr",
     )
 
 
@@ -36,7 +42,8 @@ def test_embed_contains_required_signal_fields():
     assert embed["title"] == "🟢 LONG · BTCUSDT · 15M"
     assert embed["color"] == LONG_COLOR
     assert "Market" in names and "Scanner" in names and "Timeframe" not in names
-    assert "Confidence" in names and "Price" in names
+    assert "Confidence" in names and "Entry" in names
+    assert "Stop loss" in names and "Take profit" in names and "R:R" in names and "Risk" in names
     market_field = next(field for field in embed["fields"] if field["name"] == "Market")
     assert "Crypto" in market_field["value"]
     assert embed["footer"]["text"].startswith("ASTA V0.1")
@@ -46,8 +53,8 @@ def test_embed_contains_required_signal_fields():
 def test_short_signal_uses_red_and_price_formatting():
     embed = build_signal_embed(make_signal(signal_type=SignalType.SHORT, price=0.000123))
     assert embed["color"] == SHORT_COLOR
-    price_field = next(field for field in embed["fields"] if field["name"] == "Price")
-    assert price_field["value"] == "0.00012300"
+    entry_field = next(field for field in embed["fields"] if field["name"] == "Entry")
+    assert entry_field["value"] == "0.00012300"
 
 
 def test_format_price_buckets():

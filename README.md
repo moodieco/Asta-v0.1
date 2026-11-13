@@ -17,12 +17,12 @@ providers ──► data_service ──► scanners ──► signal_manager ─
 | Services (data, analysis, notification) | done |
 | Providers: Binance crypto, OANDA forex, Yahoo stock | done |
 | Scanners: 2 forex, 4 crypto, 2 stock | done |
-| Signal pipeline: validate, dedupe, history, delivery accounting | done |
-| Storage: SQLite history (JSONL optional) + CSV/Google Sheets export | done |
+| Signal pipeline: validate, dedupe, entry/stop/target, outcome scoring | done |
+| Storage: SQLite history + CSV/Google Sheets export, 1.4k backfilled signals | done |
 | Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
 | Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
 | Tooling: CLI, 5 scripts, CI (tests + lint) | done |
-| Tests | 139 passing |
+| Tests | 156 passing |
 
 ## Quickstart (Bahasa Indonesia)
 
@@ -89,6 +89,8 @@ python scripts/scan_once.py             # offline demo with synthetic candles
 python scripts/signal_frequency.py --market crypto   # alerts/day per scanner (history replay)
 python scripts/export_signals.py                     # mirror new signals to CSV / Google Sheets
 python scripts/migrate_history.py                    # JSONL -> SQLite, idempotent
+python scripts/backfill_history.py --market crypto --days 60 --commit   # historical replay
+python scripts/update_outcomes.py                    # score open signals (TP/SL/expiry)
 ```
 
 ## Configuration

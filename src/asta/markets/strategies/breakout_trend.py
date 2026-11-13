@@ -21,6 +21,7 @@ class BreakoutTrendStrategy(Strategy):
         "atr_period": 14,
         "max_distance_atr": 2.5,
         "min_confidence": 0.52,
+        "stop_buffer_pct": 0.001,
         "min_candles": 90,
     }
 
@@ -94,6 +95,10 @@ class BreakoutTrendStrategy(Strategy):
                 signal_type=signal_type,
                 confidence=min(confidence, 0.95),
                 reason=reason,
+                stop_loss=breakout.level
+                * (1.0 - float(self.param("stop_buffer_pct")))
+                if breakout.direction == "bullish"
+                else breakout.level * (1.0 + float(self.param("stop_buffer_pct"))),
                 indicators=indicators,
                 metadata={"trend_aligned": aligned, "lookback": breakout.lookback},
             )

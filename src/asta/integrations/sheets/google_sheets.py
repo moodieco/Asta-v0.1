@@ -358,6 +358,48 @@ class GoogleSheetsWriter(SheetWriter):
         self.ensure_ready()
         return self._append_rows(rows)
 
+    def clear(self) -> None:
+        """Wipe the data range (keeps the tab, drops the rows)."""
+        token = self.auth.access_token()
+        self._request(
+            "POST",
+            "{}/spreadsheets/{}/values/{}:clear".format(
+                self.base_url,
+                self.spreadsheet_id,
+                quote("{}!A1:Z100000".format(self.sheet_name), safe=""),
+            ),
+            token,
+            json={},
+        )
+        self._ready = False
+
+    def replace_all(self, rows: List[List[Any]]) -> int:
+        """Rewrite the tab (used after header changes or outcome updates)."""
+        self.ensure_ready()
+        token = self.auth.access_token()
+        # clearing only "A1" would leave stale rows below: clear the whole tab
+        whole_sheet = quote(self.sheet_name, safe="")
+        sheet_range = quote("{}!A1".format(self.sheet_name), safe="")
+        self._request(
+            "POST",
+            "{}/spreadsheets/{}/values/{}:clear".format(
+                self.base_url, self.spreadsheet_id, whole_sheet
+            ),
+            token,
+            json={},
+        )
+        self._request(
+            "PUT",
+            "{}/spreadsheets/{}/values/{}".format(
+                self.base_url, self.spreadsheet_id, sheet_range
+            ),
+            token,
+            params={"valueInputOption": "RAW"},
+            json={"majorDimension": "ROWS", "values": rows},
+        )
+        self._ready = True
+        return len(rows)
+
     def _append_rows(self, rows: List[List[Any]]) -> int:
         if not self.spreadsheet_id:
             raise SheetsError("no spreadsheet id configured")

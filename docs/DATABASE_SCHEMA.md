@@ -26,7 +26,21 @@ CREATE TABLE signals (
     indicators    TEXT    NOT NULL DEFAULT '{}',  -- JSON
     metadata      TEXT    NOT NULL DEFAULT '{}',  -- JSON
     created_at    TEXT    NOT NULL,          -- signal time, ISO-8601 UTC
-    recorded_at   TEXT    NOT NULL           -- insert time, ISO-8601 UTC
+    recorded_at   TEXT    NOT NULL,          -- insert time, ISO-8601 UTC
+    -- risk levels (added by migration on startup)
+    stop_loss     REAL,
+    take_profit   REAL,
+    risk_reward   REAL,
+    risk_pct      REAL,
+    atr           REAL,
+    levels_source TEXT    NOT NULL DEFAULT '',
+    expires_at    TEXT,
+    -- outcome
+    status        TEXT    NOT NULL DEFAULT 'open',   -- open | hit_tp | hit_sl | expired
+    closed_at     TEXT,
+    realized_r    REAL,
+    bars_held     INTEGER,
+    source        TEXT    NOT NULL DEFAULT 'live'     -- live | backfill
 );
 CREATE INDEX idx_signals_scanner ON signals(scanner_id, created_at DESC);
 CREATE INDEX idx_signals_market  ON signals(market, created_at DESC);
@@ -47,6 +61,9 @@ CREATE INDEX idx_signals_symbol  ON signals(symbol, timeframe, created_at DESC);
 | `by_market(market, limit)` / `by_scanner(id, limit)` | filtered rows |
 | `last_timestamp(scanner_id, symbol)` | `datetime` or `None` |
 | `stats()` | `{"market:scanner_id": count}` |
+| `recorded_after(cursor, limit)` | rows for spreadsheet export |
+| `open_signals(limit)` / `update_outcome(...)` | outcome tracking |
+| `outcome_stats()` | count + average R per status |
 
 ### Typical queries
 
@@ -61,6 +78,26 @@ SELECT symbol, MAX(created_at) FROM signals GROUP BY symbol;
 -- confidence distribution per market
 SELECT market, ROUND(AVG(confidence), 3), COUNT(*) FROM signals GROUP BY market;
 ```
+
+### Outcome queries
+
+```sql
+-- win rate by scanner (closed signals only)
+SELECT scanner_id,
+       SUM(status = 'hit_tp') * 1.0 / COUNT(*) AS win_rate,
+       AVG(realized_r) AS avg_r,
+       COUNT(*) AS closed
+FROM signals
+WHERE status IN ('hit_tp','hit_sl','expired')
+GROUP BY scanner_id ORDER BY avg_r DESC;
+
+-- open signals older than their expiry
+SELECT scanner_id, symbol, expires_at FROM signals
+WHERE status = 'open' AND expires_at < datetime('now');
+```
+
+Older databases are migrated automatically: `Database.initialize()` adds any
+column listed in `MIGRATIONS` that the table is missing.
 
 ## JSONL
 

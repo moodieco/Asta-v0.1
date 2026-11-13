@@ -100,6 +100,7 @@ class AstaApp:
         validator = SignalValidator(
             min_confidence=self.config.validator.min_confidence,
             max_age_seconds=self.config.validator.max_signal_age_seconds,
+            require_levels=self.config.validator.require_levels,
         )
 
         channels = ChannelConfig.from_env(channels=self.config.discord.channels)

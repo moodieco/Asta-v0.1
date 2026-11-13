@@ -15,6 +15,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from asta.core.indicators import atr
+from asta.core.risk import build_levels
 from asta.core.signal_model import Market, ScanContext, Signal, SignalType
 from asta.utils.exceptions import ConfigurationError, ScannerError
 from asta.utils.logger import get_logger
@@ -170,6 +172,8 @@ class ScannerBase(ABC):
                     indicators=result.indicators,
                     metadata=result.metadata,
                     price=result.price,
+                    stop_loss=getattr(result, "stop_loss", None),
+                    take_profit=getattr(result, "take_profit", None),
                 )
             )
         return signals
@@ -183,7 +187,21 @@ class ScannerBase(ABC):
         indicators: Optional[Dict[str, float]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         price: Optional[float] = None,
+        stop_loss: Optional[float] = None,
+        take_profit: Optional[float] = None,
     ) -> Signal:
+        entry = price if price is not None else context.price
+        atr_value = atr(context.candles, int(self.params.get("atr_period", 14)))
+        levels = build_levels(
+            signal_type,
+            entry,
+            atr_value,
+            params=self.params,
+            structural_stop=stop_loss,
+            take_profit=take_profit,
+            last_timestamp=context.last_timestamp,
+            timeframe=context.timeframe,
+        )
         return Signal(
             scanner_id=self.id,
             scanner_name=self.name or self.id,
@@ -198,6 +216,13 @@ class ScannerBase(ABC):
             strategy=self.strategy or self.name,
             indicators={k: float(v) for k, v in (indicators or {}).items()},
             metadata=dict(metadata or {}),
+            stop_loss=levels.stop_loss if levels else None,
+            take_profit=levels.take_profit if levels else None,
+            risk_reward=levels.risk_reward if levels else None,
+            risk_pct=levels.risk_pct if levels else None,
+            atr=levels.atr if levels else atr_value,
+            levels_source=levels.source if levels else "",
+            expires_at=levels.expires_at if levels else None,
         )
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper

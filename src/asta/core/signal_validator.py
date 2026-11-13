@@ -39,11 +39,13 @@ class SignalValidator:
         max_age_seconds: int = 3600,
         max_future_skew_seconds: int = 120,
         min_reason_length: int = 10,
+        require_levels: bool = False,
     ):
         self.min_confidence = float(min_confidence)
         self.max_age_seconds = int(max_age_seconds)
         self.max_future_skew_seconds = int(max_future_skew_seconds)
         self.min_reason_length = int(min_reason_length)
+        self.require_levels = bool(require_levels)
 
     def validate(self, signal: Signal, now=None) -> ValidationResult:
         now = now or utcnow()
@@ -83,6 +85,22 @@ class SignalValidator:
             issue("stale_signal", "signal is {:.0f}s old (max {})".format(age, self.max_age_seconds))
         elif age < -self.max_future_skew_seconds:
             issue("future_signal", "signal timestamp is {:.0f}s in the future".format(-age))
+
+        has_levels = signal.stop_loss is not None or signal.take_profit is not None
+        if self.require_levels and not has_levels:
+            issue("missing_levels", "signal has no stop_loss/take_profit")
+        elif has_levels and (signal.stop_loss is None or signal.take_profit is None):
+            issue("incomplete_levels", "stop_loss and take_profit must be provided together")
+        elif has_levels and signal.price is not None:
+            if signal.signal_type.value == "long":
+                if not (signal.stop_loss < signal.price < signal.take_profit):
+                    issue("bad_levels", "long requires stop < entry < target")
+            else:
+                if not (signal.take_profit < signal.price < signal.stop_loss):
+                    issue("bad_levels", "short requires target < entry < stop")
+            risk_pct = abs(signal.price - signal.stop_loss) / signal.price * 100.0
+            if risk_pct <= 0 or risk_pct > 10.0:
+                issue("bad_risk", "stop distance {:.2f}% outside 0-10%".format(risk_pct))
 
         for name, value in (signal.indicators or {}).items():
             if not math.isfinite(value):

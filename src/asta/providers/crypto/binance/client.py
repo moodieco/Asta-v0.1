@@ -36,11 +36,24 @@ class BinanceClient(BaseHttpClient):
             client=client,
         )
 
-    def klines(self, symbol: str, interval: str, limit: int = 200) -> List[List[Any]]:
-        payload = self.request_json(
-            "/api/v3/klines",
-            params={"symbol": symbol, "interval": interval, "limit": max(1, min(int(limit), 1000))},
-        )
+    def klines(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int = 200,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+    ) -> List[List[Any]]:
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": max(1, min(int(limit), 1000)),
+        }
+        if start_time is not None:
+            params["startTime"] = int(start_time)
+        if end_time is not None:
+            params["endTime"] = int(end_time)
+        payload = self.request_json("/api/v3/klines", params=params)
         if not isinstance(payload, list) or not payload:
             raise ValueError("unexpected klines payload")
         return payload

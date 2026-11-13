@@ -12,6 +12,7 @@ scheduler:
 validator:
   min_confidence: 0.35
   max_signal_age_seconds: 3600
+  require_levels: true        # only actionable signals (entry + SL + TP) are stored
 
 storage:
   backend: sqlite             # jsonl | sqlite

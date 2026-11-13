@@ -40,7 +40,15 @@ def build_signal_embed(signal: Signal, sample: bool = False) -> Dict[str, Any]:
         {"name": "Confidence", "value": "{:.0f}%".format(signal.confidence * 100), "inline": True},
     ]
     if signal.price is not None:
-        fields.append({"name": "Price", "value": format_price(signal.price), "inline": True})
+        fields.append({"name": "Entry", "value": format_price(signal.price), "inline": True})
+    if signal.stop_loss is not None:
+        fields.append({"name": "Stop loss", "value": format_price(signal.stop_loss), "inline": True})
+    if signal.take_profit is not None:
+        fields.append({"name": "Take profit", "value": format_price(signal.take_profit), "inline": True})
+    if signal.risk_reward is not None:
+        fields.append({"name": "R:R", "value": "1:{:.2f}".format(signal.risk_reward), "inline": True})
+    if signal.risk_pct is not None:
+        fields.append({"name": "Risk", "value": "{:.2f}%".format(signal.risk_pct), "inline": True})
     fields.append({"name": "Time", "value": isoformat(signal.timestamp), "inline": True})
 
     if signal.indicators:

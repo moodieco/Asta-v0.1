@@ -79,6 +79,41 @@ class SignalHistory:
             return self.load_all()[:limit]
         return [r for r in self.load_all() if str(r.get("recorded_at", "")) > recorded_at][:limit]
 
+    def open_signals(self, limit: int = 500) -> List[Dict[str, Any]]:
+        records = [
+            record
+            for record in self.load_all()
+            if str(record.get("status") or "open") == "open"
+        ]
+        return records[:limit]
+
+    def update_outcome(
+        self,
+        signal_id: str,
+        status: str,
+        closed_at: Optional[str] = None,
+        realized_r: Optional[float] = None,
+        bars_held: Optional[int] = None,
+    ) -> bool:
+        if not self.enabled or self.path is None:
+            return False
+        records = self.load_all()
+        changed = False
+        for record in records:
+            if record.get("signal_id") != signal_id:
+                continue
+            record["status"] = status
+            record["closed_at"] = closed_at
+            record["realized_r"] = realized_r
+            record["bars_held"] = bars_held
+            changed = True
+        if changed:
+            with self._lock:
+                with self.path.open("w", encoding="utf-8") as handle:
+                    for record in records:
+                        handle.write(json.dumps(record, default=str, ensure_ascii=False) + "\n")
+        return changed
+
     def last_timestamp(self, scanner_id: str, symbol: str) -> Optional[datetime]:
         for record in reversed(self.load_all()):
             if record.get("scanner_id") == scanner_id and record.get("symbol") == symbol:
@@ -120,6 +155,19 @@ class SqliteSignalHistory:
 
     def recorded_after(self, recorded_at: Optional[str], limit: int = 200) -> List[Dict[str, Any]]:
         return self.repository.recorded_after(recorded_at, limit)
+
+    def open_signals(self, limit: int = 500) -> List[Dict[str, Any]]:
+        return self.repository.open_signals(limit)
+
+    def update_outcome(
+        self,
+        signal_id: str,
+        status: str,
+        closed_at: Optional[str] = None,
+        realized_r: Optional[float] = None,
+        bars_held: Optional[int] = None,
+    ) -> bool:
+        return self.repository.update_outcome(signal_id, status, closed_at, realized_r, bars_held)
 
     def last_timestamp(self, scanner_id: str, symbol: str) -> Optional[datetime]:
         return self.repository.last_timestamp(scanner_id, symbol)

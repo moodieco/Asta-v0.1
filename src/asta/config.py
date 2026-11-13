@@ -48,6 +48,7 @@ class SchedulerSettings(BaseModel):
 class ValidatorSettings(BaseModel):
     min_confidence: float = 0.35
     max_signal_age_seconds: int = 3600
+    require_levels: bool = True
 
 
 class StorageSettings(BaseModel):

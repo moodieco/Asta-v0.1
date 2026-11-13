@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, List, Optional
 
 from asta.core.signal_model import Candle, Market
 from asta.providers.base import BaseHttpClient, MarketDataProvider
@@ -40,6 +40,9 @@ class BinanceProvider(MarketDataProvider):
                 "failed to fetch klines: {}".format(exc), provider=self.name, symbol=ticker
             ) from exc
 
+        return self._parse_rows(rows, ticker)
+
+    def _parse_rows(self, rows: List[List[Any]], ticker: str) -> List[Candle]:
         candles: List[Candle] = []
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         for row in rows:
@@ -61,6 +64,36 @@ class BinanceProvider(MarketDataProvider):
                     "malformed kline row", provider=self.name, symbol=ticker, error=str(exc)
                 ) from exc
         return candles
+
+    def fetch_history(self, symbol: str, timeframe: str, days: int) -> List[Candle]:
+        """Paginated history: Binance caps one request at 1000 klines."""
+        tf = self.validate_timeframe(timeframe)
+        interval = INTERVALS.get(tf)
+        if interval is None:
+            raise ProviderError(
+                "binance does not support timeframe {!r}".format(timeframe), provider=self.name
+            )
+        ticker = self.normalize_symbol(symbol)
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=int(days))
+        cursor = int(start.timestamp() * 1000)
+        end_ms = int(end.timestamp() * 1000)
+        rows: List[List[Any]] = []
+        seen = set()
+        for _ in range(200):  # hard stop, 200k candles
+            batch = self.client.klines(ticker, interval, 1000, start_time=cursor)
+            if not batch:
+                break
+            for row in batch:
+                if row[0] not in seen:
+                    seen.add(row[0])
+                    rows.append(row)
+            if len(batch) < 1000:
+                break
+            cursor = int(batch[-1][0]) + 1
+            if cursor >= end_ms:
+                break
+        return self._parse_rows(rows, ticker)
 
     def health_check(self) -> bool:
         return bool(self.client.ping())

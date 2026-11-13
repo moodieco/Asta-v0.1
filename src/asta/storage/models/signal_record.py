@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
 from asta.core.signal_model import Signal
-from asta.utils.time_utils import isoformat, utcnow
+from asta.utils.time_utils import isoformat, parse_datetime, utcnow
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,20 @@ class SignalRecord:
     metadata: Dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     recorded_at: str = ""
+    # -- risk levels -------------------------------------------------------
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    risk_reward: Optional[float] = None
+    risk_pct: Optional[float] = None
+    atr: Optional[float] = None
+    levels_source: str = ""
+    expires_at: Optional[str] = None
+    # -- outcome -----------------------------------------------------------
+    status: str = "open"
+    closed_at: Optional[str] = None
+    realized_r: Optional[float] = None
+    bars_held: Optional[int] = None
+    source: str = "live"
 
     @classmethod
     def from_signal(cls, signal: Signal) -> "SignalRecord":
@@ -47,6 +61,15 @@ class SignalRecord:
             metadata=dict(signal.metadata),
             created_at=isoformat(signal.timestamp),
             recorded_at=isoformat(utcnow()),
+            stop_loss=signal.stop_loss,
+            take_profit=signal.take_profit,
+            risk_reward=signal.risk_reward,
+            risk_pct=signal.risk_pct,
+            atr=signal.atr,
+            levels_source=signal.levels_source,
+            expires_at=isoformat(signal.expires_at) if signal.expires_at else None,
+            status=signal.status or "open",
+            source=getattr(signal, "source", "live") or "live",
         )
 
     @classmethod
@@ -59,29 +82,32 @@ class SignalRecord:
                     data[key] = json.loads(raw)
                 except json.JSONDecodeError:
                     data[key] = {}
-        return cls(**{key: data.get(key) for key in cls.__dataclass_fields__})
+        known = {key: data.get(key) for key in cls.__dataclass_fields__ if key in data}
+        return cls(**known)
+
+    @staticmethod
+    def column_names() -> list:
+        return list(SignalRecord.__dataclass_fields__)
+
+    def as_row(self) -> list:
+        values = []
+        for name in self.column_names():
+            value = getattr(self, name)
+            if name in ("indicators", "metadata"):
+                value = json.dumps(value, default=str)
+            values.append(value)
+        return values
 
     @property
     def timestamp(self) -> Optional[datetime]:
-        from asta.utils.time_utils import parse_datetime
-
         return parse_datetime(self.created_at) if self.created_at else None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "signal_id": self.signal_id,
-            "scanner_id": self.scanner_id,
-            "scanner_name": self.scanner_name,
-            "market": self.market,
-            "symbol": self.symbol,
-            "timeframe": self.timeframe,
-            "signal_type": self.signal_type,
-            "confidence": self.confidence,
-            "price": self.price,
-            "reason": self.reason,
-            "strategy": self.strategy,
-            "indicators": dict(self.indicators),
-            "metadata": dict(self.metadata),
-            "timestamp": self.created_at,
-            "recorded_at": self.recorded_at,
-        }
+        payload = {}
+        for name in self.column_names():
+            value = getattr(self, name)
+            if name in ("indicators", "metadata"):
+                value = dict(value)
+            payload[name] = value
+        payload["timestamp"] = self.created_at
+        return payload

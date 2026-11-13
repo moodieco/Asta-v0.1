@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict
 
-from asta.integrations.sheets.base import SheetWriter, signal_to_row
+from asta.integrations.sheets.base import HEADER, SheetWriter, signal_to_row
 from asta.integrations.sheets.csv_writer import CsvSheetWriter
 from asta.integrations.sheets.google_sheets import (
     GoogleServiceAccountAuth,
@@ -139,6 +139,29 @@ class SheetSyncService:
                 "total_rows": state["total_rows"],
                 "cursor": cursor,
             }
+
+    def rewrite_all(self) -> Dict[str, Any]:
+        """Rewrite the whole target from history (header + every row)."""
+        with self._lock:
+            records = self.history.load_all()
+            rows = [list(HEADER)] + [signal_to_row(record) for record in records]
+            try:
+                self.writer.ensure_ready()
+                written = self.writer.replace_all(rows)
+            except SheetsError as exc:
+                self.logger.error("sheet rewrite failed", extra={"error": str(exc)})
+                return {"driver": self.writer.name, "rows": 0, "error": str(exc)}
+            state = self._load_state()
+            state["total_rows"] = len(records)
+            state["last_recorded_at"] = max(
+                (str(record.get("recorded_at", "")) for record in records), default=""
+            )
+            state["updated_at"] = isoformat(utcnow())
+            self._save_state(state)
+            self.logger.info(
+                "sheet rewritten", extra={"driver": self.writer.name, "rows": written}
+            )
+            return {"driver": self.writer.name, "rows": written, "total_rows": len(records)}
 
     def close(self) -> None:
         try:

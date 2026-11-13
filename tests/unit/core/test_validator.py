@@ -64,3 +64,11 @@ def test_naive_timestamp_gets_utc():
     signal = make_signal(timestamp=datetime.now(timezone.utc).replace(tzinfo=None))
     assert signal.timestamp.tzinfo is not None
     assert SignalValidator().validate(signal).valid is True
+
+
+def test_require_levels_rejects_signals_without_sl_tp():
+    signal = make_signal(stop_loss=None, take_profit=None)
+    assert SignalValidator().validate(signal).valid is True
+    strict = SignalValidator(require_levels=True).validate(signal)
+    assert strict.valid is False
+    assert "missing_levels" in strict.reason

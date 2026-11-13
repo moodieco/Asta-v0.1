@@ -54,7 +54,7 @@ def test_sync_appends_only_new_rows_and_persists_cursor(tmp_path):
     rows = writer.read_rows()
     assert len(rows) == 3  # header + 2 signals
     assert rows[1][3] == "CXS002_VOLUME_SPIKE"
-    assert rows[1][11] == "volume_ratio=5.0"
+    assert rows[1][21] == "volume_ratio=5.0"  # indicators column
 
     records.append(record(3, "2026-11-13T20:00:03Z"))
     third = restarted.sync_once()

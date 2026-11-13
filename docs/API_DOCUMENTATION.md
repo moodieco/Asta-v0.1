@@ -136,6 +136,30 @@ notifications.send_sample_alerts(...)   # labelled sample signal cards
 `DeliveryResult`: `ok`, `status_code`, `error`, `attempts`, `dry_run`. Webhook URLs must be
 `https://…/api/webhooks/…`.
 
+### `core/risk.py`
+
+```python
+build_levels(SignalType.LONG, entry, atr, params, structural_stop=..., take_profit=...)
+# -> RiskLevels(entry, stop_loss, take_profit, risk_reward, risk_pct, atr, source, expires_at)
+
+outcome_for_signal(signal_type, entry, stop_loss, take_profit, candles, expires_at)
+# -> {"status": "hit_tp|hit_sl|expired|open", "closed_at", "realized_r", "bars_held"}
+```
+
+Stop = structural level when the setup has one, otherwise `atr_stop_multiplier × ATR`.
+Target = `reward_ratio` × risk. Signals without valid levels are rejected when
+`validator.require_levels: true` (default in `config/app.yaml`).
+
+### `backtest_service`
+
+```python
+replay_scanner(scanner, symbol, candles, validator, source="backfill", dedup_seconds=None)
+backfill_scanner(scanner, symbol, candles, repository, validator, source="backfill")
+```
+
+Replays history through the real scanner + validator, stores signals, and scores them
+against subsequent candles.
+
 ### `SheetSyncService`
 
 ```python

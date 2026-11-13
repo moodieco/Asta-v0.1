@@ -27,6 +27,7 @@ class CryptoEMAPullbackStrategy(Strategy):
         "min_body_ratio": 0.3,
         "min_slope": 0.0005,
         "min_confidence": 0.55,
+        "stop_buffer_pct": 0.001,
         "min_candles": 120,
     }
 
@@ -48,6 +49,11 @@ class CryptoEMAPullbackStrategy(Strategy):
         body_ratio = last.body / last.range if last.range else 0.0
         if body_ratio < float(self.param("min_body_ratio")):
             return []
+
+        stop_window = context.candles[-lookback:]
+        stop_buffer = float(self.param("stop_buffer_pct"))
+        swing_low = min(candle.low for candle in stop_window) * (1.0 - stop_buffer)
+        swing_high = max(candle.high for candle in stop_window) * (1.0 + stop_buffer)
 
         rsi_low = min(recent_rsi)
         rsi_high = max(recent_rsi)
@@ -83,6 +89,7 @@ class CryptoEMAPullbackStrategy(Strategy):
                         trend_slope * 100.0,
                         distance,
                     ),
+                    stop_loss=swing_low,
                     indicators={
                         "rsi": round(float(rsi[-1] or 0.0), 2),
                         "rsi_low": round(rsi_low, 2),
@@ -122,6 +129,7 @@ class CryptoEMAPullbackStrategy(Strategy):
                         trend_slope * 100.0,
                         distance,
                     ),
+                    stop_loss=swing_high,
                     indicators={
                         "rsi": round(float(rsi[-1] or 0.0), 2),
                         "rsi_high": round(rsi_high, 2),

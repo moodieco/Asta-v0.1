@@ -43,6 +43,8 @@ class StubGoogle(BaseHTTPRequestHandler):
             self._send({"replies": [{}]})
         elif path == "/v4/spreadsheets":
             self._send({"spreadsheetId": "sheet-123", "spreadsheetUrl": "https://docs.google.com/x"})
+        elif path.endswith(":clear"):
+            self._send({})
         elif path.endswith(":append"):
             payload = json.loads(body)
             if payload["values"] == [HEADER]:
@@ -50,6 +52,14 @@ class StubGoogle(BaseHTTPRequestHandler):
             self._send({"updates": {"updatedRows": len(payload["values"])}})
         else:
             self._send({"error": "not found"}, status=404)
+
+    def do_PUT(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode() if length else ""
+        path = unquote(urlparse(self.path).path)
+        StubGoogle.requests.append(("PUT", path, body, self.headers.get("Authorization")))
+        payload = json.loads(body) if body else {}
+        self._send({"updatedRows": len(payload.get("values", []))})
 
     def do_GET(self):
         path = unquote(urlparse(self.path).path)
@@ -193,3 +203,26 @@ def test_missing_tab_is_created(tmp_path, stub):
     paths = [p for _, p, _, _ in StubGoogle.requests]
     assert "/v4/spreadsheets/sheet-123:batchUpdate" in paths
     assert StubGoogle.header_rows == 1
+
+
+def test_rewrite_clears_the_whole_tab(tmp_path, stub):
+    token_path = tmp_path / "token.json"
+    token_path.write_text(
+        json.dumps(
+            {
+                "token": "tok-1",
+                "refresh_token": "r",
+                "client_id": "c",
+                "client_secret": "s",
+                "expiry": "2999-01-01T00:00:00Z",
+            }
+        )
+    )
+    client = httpx.Client(timeout=5)
+    auth = GoogleSheetsAuth(token_path, client=client, token_url=stub + "/token")
+    writer = GoogleSheetsWriter(
+        auth, spreadsheet_id="sheet-123", sheet_name="Signals", client=client, base_url=stub + "/v4"
+    )
+    writer.replace_all([HEADER, ["row"]])
+    clear_calls = [p for m, p, _, _ in StubGoogle.requests if p.endswith(":clear")]
+    assert clear_calls == ["/v4/spreadsheets/sheet-123/values/Signals:clear"]

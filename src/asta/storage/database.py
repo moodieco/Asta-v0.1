@@ -1,7 +1,7 @@
 """SQLite connection handling for ASTA.
 
-One file, WAL mode, no ORM. The schema is created on startup so a fresh clone
-can run without migrations.
+One file, WAL mode, no ORM. Missing columns are added on startup so an older
+database keeps working after the signal model grows.
 """
 
 from __future__ import annotations
@@ -36,6 +36,22 @@ CREATE INDEX IF NOT EXISTS idx_signals_market   ON signals(market, created_at DE
 CREATE INDEX IF NOT EXISTS idx_signals_symbol   ON signals(symbol, timeframe, created_at DESC);
 """
 
+#: Columns added after V0.1 shipped; ALTER TABLE keeps existing databases valid.
+MIGRATIONS = {
+    "stop_loss": "REAL",
+    "take_profit": "REAL",
+    "risk_reward": "REAL",
+    "risk_pct": "REAL",
+    "atr": "REAL",
+    "levels_source": "TEXT NOT NULL DEFAULT ''",
+    "expires_at": "TEXT",
+    "status": "TEXT NOT NULL DEFAULT 'open'",
+    "closed_at": "TEXT",
+    "realized_r": "REAL",
+    "bars_held": "INTEGER",
+    "source": "TEXT NOT NULL DEFAULT 'live'",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path], timeout: float = 5.0):
@@ -68,6 +84,15 @@ class Database:
     def initialize(self) -> None:
         with self.session() as connection:
             connection.executescript(SCHEMA)
+            existing = {
+                row["name"] for row in connection.execute("PRAGMA table_info(signals)").fetchall()
+            }
+            for column, ddl in MIGRATIONS.items():
+                if column in existing:
+                    continue
+                connection.execute(
+                    "ALTER TABLE signals ADD COLUMN {} {}".format(column, ddl)
+                )
 
     def close(self) -> None:  # connections are per-session; kept for symmetry
         return None

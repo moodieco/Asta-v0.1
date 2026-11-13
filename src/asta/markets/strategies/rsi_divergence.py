@@ -20,6 +20,7 @@ class RSIDivergenceStrategy(Strategy):
         "oversold": 35.0,
         "overbought": 65.0,
         "min_confidence": 0.55,
+        "stop_buffer_pct": 0.001,
         "volume_confirm": False,
         "volume_period": 20,
         "min_volume_ratio": 1.0,
@@ -50,8 +51,11 @@ class RSIDivergenceStrategy(Strategy):
         rsi_first = float(rsi_values[divergence.first_index])
         rsi_second = float(rsi_values[divergence.second_index])
 
+        stop_buffer = float(self.param("stop_buffer_pct"))
+        pivot_candle = candles[divergence.second_index]
         if divergence.direction == "bullish":
             signal_type = SignalType.LONG
+            structural_stop = pivot_candle.low * (1.0 - stop_buffer)
             difficulty = 0.10 if rsi_second < float(self.param("oversold")) else 0.0
             reason = (
                 "Regular bullish RSI divergence: price printed a lower low ({:+.2f}%) "
@@ -61,6 +65,7 @@ class RSIDivergenceStrategy(Strategy):
             )
         else:
             signal_type = SignalType.SHORT
+            structural_stop = pivot_candle.high * (1.0 + stop_buffer)
             difficulty = 0.10 if rsi_second > float(self.param("overbought")) else 0.0
             reason = (
                 "Regular bearish RSI divergence: price printed a higher high ({:+.2f}%) "
@@ -90,6 +95,7 @@ class RSIDivergenceStrategy(Strategy):
                 signal_type=signal_type,
                 confidence=confidence,
                 reason=reason,
+                stop_loss=structural_stop,
                 indicators=indicators,
                 metadata={
                     "pivot_bars_ago": len(candles) - 1 - divergence.second_index,

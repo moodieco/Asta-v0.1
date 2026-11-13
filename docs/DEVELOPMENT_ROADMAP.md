@@ -18,7 +18,10 @@ Shipped:
 - [x] Market defaults shipped in code (`market_config.yaml`, `universe.py`) with
       market-specific indicator helpers (sessions, volume percentile, overnight gaps)
 - [x] Tooling: CLI, 5 scripts, validate/test/status/inspect, offline demo
-- [x] 130 tests across unit/integration/e2e; CI: pytest matrix + ruff
+- [x] Historical backfill (`scripts/backfill_history.py`) writing entry/stop/target,
+      R:R, expiry and outcomes; 1,400+ replayed signals in the trial DB
+- [x] Outcome scoring (hit_tp / hit_sl / expired, realized R) + per-scanner win rate
+- [x] 156 tests across unit/integration/e2e; CI: pytest matrix + ruff
 
 Known limitations:
 
@@ -32,7 +35,7 @@ Known limitations:
 
 ## V0.2 — signal quality and resilience
 
-- [ ] Backtest harness: replay historical candles, report hit rate / expectancy per scanner
+- [ ] Backtest harness: equity curve + drawdown per scanner (raw win rate/expectancy exist)
 - [ ] Confidence calibration from backtest results instead of hand-tuned constants
 - [ ] Wire the Binance websocket to update the latest candle instead of polling
 - [ ] Provider failover + circuit breaker per provider

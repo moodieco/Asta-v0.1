@@ -22,6 +22,10 @@ class StrategyResult:
     indicators: Dict[str, float] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     price: Optional[float] = None
+    #: Structural levels from the setup (pivot low, breakout level). When absent
+    #: the scanner falls back to ATR-based levels.
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
 
 
 class Strategy(ABC):

@@ -55,9 +55,18 @@ PYTHONPATH=src python scripts/export_signals.py --out ~/asta.csv
 ## Columns
 
 `recorded_at, timestamp, market, scanner_id, symbol, timeframe, signal_type, confidence,
-price, strategy, reason, indicators, signal_id`
+entry, stop_loss, take_profit, risk_reward, risk_pct, atr, levels_source, expires_at,
+status, realized_r, bars_held, strategy, reason, indicators, signal_id, source`
 
-`indicators` renders as `key=value, key=value`; `confidence` and `price` are numeric cells.
+`indicators` renders as `key=value, key=value`; numeric columns stay numeric.
+`status` / `realized_r` / `bars_held` are filled by `scripts/update_outcomes.py`
+(or immediately for backfilled rows). `source` is `live` or `backfill`.
+
+After a header change or outcome update, rewrite the tab instead of appending:
+
+```bash
+PYTHONPATH=src python scripts/export_signals.py --rewrite
+```
 
 ## Google Sheets with a service account (recommended)
 

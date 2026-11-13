@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from asta.core.signal_model import Candle, Market
@@ -34,6 +34,28 @@ class StockProvider(MarketDataProvider):
         if not candles:
             raise ProviderError("no usable candles returned", provider=self.name, symbol=ticker)
         return candles[-int(limit):] if limit else candles
+
+    def fetch_history(self, symbol: str, timeframe: str, days: int) -> List[Candle]:
+        tf = self.validate_timeframe(timeframe)
+        interval = INTERVALS.get(tf)
+        if interval is None:
+            raise ProviderError(
+                "stock provider does not support timeframe {!r}".format(timeframe),
+                provider=self.name,
+            )
+        if tf == "1d":
+            price_range = "5y" if days > 730 else "2y"
+        elif tf == "1w":
+            price_range = "5y"
+        else:
+            price_range = RANGES[tf]
+        ticker = self.normalize_symbol(symbol)
+        payload = self.client.chart(ticker, interval, price_range)
+        candles = self.filter_closed_candles(self._parse(payload, ticker), tf)
+        if days:
+            cutoff = candles[-1].timestamp - timedelta(days=int(days))
+            candles = [candle for candle in candles if candle.timestamp >= cutoff]
+        return candles
 
     def _parse(self, payload: Dict[str, Any], ticker: str) -> List[Candle]:
         chart = payload.get("chart") or {}
