@@ -1,0 +1,13 @@
+# Spreadsheet export of accepted signals.
+# driver: csv    -> appends to a local CSV (open/import it in Google Sheets or Excel)
+#         google -> appends to a Google Sheet (needs OAuth token, see docs/SPREADSHEET_SYNC.md)
+enabled: true
+driver: csv
+csv_path: data/history/signals_export.csv
+state_path: data/history/sheet_sync_state.json
+spreadsheet_id: ""                  # Google Sheets id (empty + create_if_missing -> creates one)
+sheet_name: Signals
+create_if_missing: true
+token_path: ~/.hermes/google_token.json
+batch_size: 200
+auto_sync: true                     # export new signals after every scan cycle

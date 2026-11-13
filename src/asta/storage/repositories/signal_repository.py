@@ -90,6 +90,23 @@ class SignalRepository:
             ).fetchall()
         return [SignalRecord.from_row(row).to_dict() for row in rows]
 
+    def recorded_after(self, recorded_at: Optional[str], limit: int = 200) -> List[Dict[str, Any]]:
+        """Rows inserted after ``recorded_at`` (ISO string), oldest first."""
+        with self.database.session() as connection:
+            if recorded_at:
+                rows = connection.execute(
+                    "SELECT {} FROM signals WHERE recorded_at > ? ORDER BY id ASC LIMIT ?".format(
+                        _COLUMNS
+                    ),
+                    (recorded_at, int(limit)),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT {} FROM signals ORDER BY id ASC LIMIT ?".format(_COLUMNS),
+                    (int(limit),),
+                ).fetchall()
+        return [SignalRecord.from_row(row).to_dict() for row in rows]
+
     def last_timestamp(self, scanner_id: str, symbol: str) -> Optional[datetime]:
         with self.database.session() as connection:
             row = connection.execute(

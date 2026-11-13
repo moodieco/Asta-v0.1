@@ -1,8 +1,9 @@
 # Storage schema
 
 Two interchangeable backends behind the same interface (`append`, `load_all`, `tail`,
-`count`, `stats`): JSONL (default) and SQLite. Select with
-`config/app.yaml: storage.backend`.
+`count`, `recorded_after`, `stats`): SQLite (current deployment) and JSONL. Select with
+`config/app.yaml: storage.backend`. Migrate existing JSONL rows with
+`scripts/migrate_history.py` (idempotent, keeps original timestamps).
 
 ## SQLite
 

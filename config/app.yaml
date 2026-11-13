@@ -14,7 +14,7 @@ validator:
   max_signal_age_seconds: 3600
 
 storage:
-  backend: jsonl              # jsonl | sqlite
+  backend: sqlite             # jsonl | sqlite
   signal_history_path: data/history/signals.jsonl
   sqlite_path: data/history/asta.db
   dedup_window_seconds: 3600

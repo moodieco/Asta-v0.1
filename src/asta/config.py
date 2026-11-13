@@ -83,6 +83,27 @@ class LoggingSettings(BaseModel):
         return fmt
 
 
+class SheetsSettings(BaseModel):
+    enabled: bool = False
+    driver: str = "csv"
+    csv_path: str = "data/history/signals_export.csv"
+    state_path: str = "data/history/sheet_sync_state.json"
+    spreadsheet_id: str = ""
+    sheet_name: str = "Signals"
+    create_if_missing: bool = True
+    token_path: str = "~/.hermes/google_token.json"
+    batch_size: int = 200
+    auto_sync: bool = True
+
+    @field_validator("driver")
+    @classmethod
+    def _known_driver(cls, value: str) -> str:
+        driver = str(value).strip().lower()
+        if driver not in ("csv", "google"):
+            raise ValueError("sheets.driver must be 'csv' or 'google'")
+        return driver
+
+
 class DiscordChannelSettings(BaseModel):
     env: str
     label: str = ""
@@ -110,6 +131,7 @@ class AstaConfig(BaseModel):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
+    sheets: SheetsSettings = Field(default_factory=SheetsSettings)
     providers: Dict[str, Any] = Field(default_factory=dict)
     markets: Dict[str, MarketSettings] = Field(default_factory=dict)
     scanner_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
@@ -211,6 +233,7 @@ def load_config(
     markets = _read_yaml(directory / "markets.yaml")
     logging_cfg = _read_yaml(directory / "logging.yaml")
     discord_cfg = _read_yaml(directory / "discord.yaml")
+    sheets_cfg = _read_yaml(directory / "sheets.yaml")
 
     merged: Dict[str, Any] = dict(app)
     merged["markets"] = {
@@ -221,6 +244,8 @@ def load_config(
         merged["logging"] = logging_cfg
     if discord_cfg:
         merged["discord"] = discord_cfg
+    if sheets_cfg:
+        merged["sheets"] = sheets_cfg
 
     merged = _expand_env(merged)
     if os.getenv("ASTA_LOG_LEVEL"):

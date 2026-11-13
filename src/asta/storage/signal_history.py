@@ -74,6 +74,11 @@ class SignalHistory:
     def count(self) -> int:
         return len(self.load_all())
 
+    def recorded_after(self, recorded_at: Optional[str], limit: int = 200) -> List[Dict[str, Any]]:
+        if not recorded_at:
+            return self.load_all()[:limit]
+        return [r for r in self.load_all() if str(r.get("recorded_at", "")) > recorded_at][:limit]
+
     def last_timestamp(self, scanner_id: str, symbol: str) -> Optional[datetime]:
         for record in reversed(self.load_all()):
             if record.get("scanner_id") == scanner_id and record.get("symbol") == symbol:
@@ -112,6 +117,9 @@ class SqliteSignalHistory:
 
     def count(self) -> int:
         return self.repository.count()
+
+    def recorded_after(self, recorded_at: Optional[str], limit: int = 200) -> List[Dict[str, Any]]:
+        return self.repository.recorded_after(recorded_at, limit)
 
     def last_timestamp(self, scanner_id: str, symbol: str) -> Optional[datetime]:
         return self.repository.last_timestamp(scanner_id, symbol)

@@ -36,6 +36,7 @@ Instructions for AI coding agents and humans working in this repository.
 | New provider / broker | `providers/<market>/<broker>/` (`client.py` + `candles.py`) |
 | New persistence | `storage/` (`database.py`, `repositories/`, `models/`) |
 | Orchestration | `services/` |
+| Spreadsheet export | `integrations/sheets/` |
 
 ## Invariants worth tests
 

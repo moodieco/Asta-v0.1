@@ -18,11 +18,11 @@ providers ──► data_service ──► scanners ──► signal_manager ─
 | Providers: Binance crypto, OANDA forex, Yahoo stock | done |
 | Scanners: 2 forex, 4 crypto, 2 stock | done |
 | Signal pipeline: validate, dedupe, history, delivery accounting | done |
-| Storage: JSONL or SQLite (switch with one config value) | done |
+| Storage: SQLite history (JSONL optional) + CSV/Google Sheets export | done |
 | Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
 | Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
 | Tooling: CLI, 5 scripts, CI (tests + lint) | done |
-| Tests | 130 passing |
+| Tests | 137 passing |
 
 ## Quickstart (Bahasa Indonesia)
 
@@ -50,6 +50,7 @@ src/asta/
   providers/                base.py + crypto/binance/ · forex/oanda/ · stock/yahoo/
   services/                 data_service · analysis_service · notification_service
   integrations/discord/     client · embed_builder · router · alert_manager · channel_config
+  integrations/sheets/      csv_writer · google_sheets · sync
   storage/                  database · repositories/ · models/ · signal_history · cache
   utils/                    logger · time_utils · exceptions
 tests/                      unit/ (core, forex, crypto, stock) · integration/ · e2e/ · fixtures/
@@ -86,6 +87,8 @@ python scripts/scanner_status.py        # inventory, health, recent signals
 python scripts/inspect_market.py --market crypto --symbols BTCUSDT --timeframes 1h
 python scripts/scan_once.py             # offline demo with synthetic candles
 python scripts/signal_frequency.py --market crypto   # alerts/day per scanner (history replay)
+python scripts/export_signals.py                     # mirror new signals to CSV / Google Sheets
+python scripts/migrate_history.py                    # JSONL -> SQLite, idempotent
 ```
 
 ## Configuration
@@ -96,12 +99,15 @@ python scripts/signal_frequency.py --market crypto   # alerts/day per scanner (h
 | `config/markets.yaml` | market mana yang aktif, daftar symbol, override per scanner |
 | `config/logging.yaml` | level, format (text/json), rotating file, per-logger level |
 | `config/discord.yaml` | mapping market → env var webhook + label channel |
+| `config/sheets.yaml` | export driver (csv/google), target, cursor, auto-sync |
 
 Secrets hanya di `.env` (`${VAR}` di-expand saat load). `storage.backend: jsonl | sqlite`
-menentukan penyimpanan sinyal.
+menentukan penyimpanan sinyal. Export spreadsheet mengikuti `config/sheets.yaml`
+(detail: [docs/SPREADSHEET_SYNC.md](docs/SPREADSHEET_SYNC.md)).
 
 ## Documentation
 
 * [ARCHITECTURE](docs/ARCHITECTURE.md) · [API](docs/API_DOCUMENTATION.md) · [SIGNAL SPEC](docs/SIGNAL_SPECIFICATION.md)
-* [SCANNER GUIDE](docs/SCANNER_GUIDE.md) · [DATABASE SCHEMA](docs/DATABASE_SCHEMA.md) · [SECURITY](docs/SECURITY.md)
+* [SCANNER GUIDE](docs/SCANNER_GUIDE.md) · [DATABASE SCHEMA](docs/DATABASE_SCHEMA.md)
+* [SPREADSHEET SYNC](docs/SPREADSHEET_SYNC.md) · [SECURITY](docs/SECURITY.md)
 * [ROADMAP](docs/DEVELOPMENT_ROADMAP.md) · [CONTRIBUTING](docs/CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)

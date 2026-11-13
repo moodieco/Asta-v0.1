@@ -37,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--markets", default="", help="comma separated market filter")
     parser.add_argument("--scanners", default="", help="comma separated scanner id filter")
+    parser.add_argument(
+        "--sync-sheet", action="store_true", help="export new signals to the configured spreadsheet"
+    )
     parser.add_argument("--version", action="version", version="asta {}".format(__version__))
     return parser
 
@@ -95,6 +98,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             results = app.send_sample_alerts()
             print(json.dumps({"sample_alerts": results}, indent=2))
             return 0 if all(item.get("ok") for item in results) else 1
+
+        if args.sync_sheet:
+            print(json.dumps(app.sync_sheet(), indent=2))
+            return 0
 
         if args.once:
             report = app.run_once(

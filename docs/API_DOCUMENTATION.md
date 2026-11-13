@@ -136,6 +136,16 @@ notifications.send_sample_alerts(...)   # labelled sample signal cards
 `DeliveryResult`: `ok`, `status_code`, `error`, `attempts`, `dry_run`. Webhook URLs must be
 `https://…/api/webhooks/…`.
 
+### `SheetSyncService`
+
+```python
+sync.sync_once()   # -> {"driver": "csv", "appended": 2, "total_rows": 2, "cursor": "..."}
+sync.status()      # -> driver, target, cursor, total rows
+```
+
+Incremental: reads history rows newer than the cursor in `data/history/sheet_sync_state.json`,
+appends them, moves the cursor. Drivers: `CsvSheetWriter`, `GoogleSheetsWriter`.
+
 ## 5. Configuration
 
 ### `config/app.yaml`
@@ -185,6 +195,20 @@ channels:
   crypto: {env: DISCORD_WEBHOOK_CRYPTO, label: "#cryptic"}
 ```
 
+### `config/sheets.yaml`
+
+```yaml
+enabled: true
+driver: csv | google
+csv_path: data/history/signals_export.csv
+state_path: data/history/sheet_sync_state.json
+spreadsheet_id: ""          # google: existing sheet, or empty + create_if_missing
+sheet_name: Signals
+token_path: ~/.hermes/google_token.json
+batch_size: 200
+auto_sync: true
+```
+
 Environment: `ASTA_CONFIG_DIR`, `ASTA_LOG_LEVEL`, `ASTA_LOG_FORMAT`, `ASTA_DRY_RUN`,
 `OANDA_API_TOKEN`, `OANDA_ACCOUNT_ID`, `DISCORD_WEBHOOK_{FOREX,CRYPTO,STOCK}`.
 
@@ -199,6 +223,7 @@ Environment: `ASTA_CONFIG_DIR`, `ASTA_LOG_LEVEL`, `ASTA_LOG_FORMAT`, `ASTA_DRY_R
 | `asta --list-scanners` | discovered scanners |
 | `asta --health` | providers, storage, webhooks, cache, events |
 | `asta --test-alert` / `--sample-alert` | labelled Discord checks |
+| `asta --sync-sheet` | export new signals to the configured spreadsheet |
 | `asta --config <dir>` | alternate config directory |
 
 Exit codes: `0` ok, `1` test/sample alert failed, `2` configuration/startup error.

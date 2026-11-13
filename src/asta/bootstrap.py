@@ -7,7 +7,7 @@ tests can swap one piece (a stub provider, a fake notifier).
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from asta.config import AstaConfig, load_config
 from asta.core.deduplication import DeduplicationStore
@@ -22,6 +22,7 @@ from asta.core.signal_validator import SignalValidator
 from asta.integrations.discord.alert_manager import AlertManager
 from asta.integrations.discord.channel_config import ChannelConfig
 from asta.integrations.discord.discord_router import DiscordRouter
+from asta.integrations.sheets.sync import SheetSyncService, build_sheet_writer
 from asta.providers import build_providers
 from asta.providers.base import MarketDataProvider
 from asta.services.analysis_service import AnalysisService
@@ -52,6 +53,7 @@ class AstaApp:
         self.data_service: Optional[DataService] = None
         self.analysis: Optional[AnalysisService] = None
         self.notifications: Optional[NotificationService] = None
+        self.sheet_sync: Optional[SheetSyncService] = None
         self.history = None
         self.scheduler: Optional[ScannerScheduler] = None
 
@@ -88,6 +90,7 @@ class AstaApp:
             sqlite_path=self.config.resolve_path(self.config.storage.sqlite_path),
             enabled=self.config.storage.enabled,
         )
+        sheet_sync = self._build_sheet_sync(history)
         deduplication = DeduplicationStore(
             window_seconds=self.config.storage.dedup_window_seconds,
             cache=TTLCache(default_ttl=self.config.storage.dedup_window_seconds),
@@ -118,6 +121,10 @@ class AstaApp:
         scanner_manager = ScannerManager(scanners)
 
         self._subscribe_event_logging()
+        if sheet_sync is not None and self.config.sheets.auto_sync:
+            self.event_bus.subscribe(
+                "cycle.completed", lambda event: sheet_sync.sync_once()
+            )
         analysis = AnalysisService(scanner_manager, signal_manager, data_service, self.event_bus)
         scheduler = ScannerScheduler(
             analysis,
@@ -130,6 +137,7 @@ class AstaApp:
         self.analysis = analysis
         self.notifications = notifications
         self.history = history
+        self.sheet_sync = sheet_sync
         self.registry = registry
         self.scheduler = scheduler
 
@@ -153,6 +161,17 @@ class AstaApp:
                     extra={"market": market.value, "provider": provider.name},
                 )
         return self
+
+    def _build_sheet_sync(self, history) -> Optional[SheetSyncService]:
+        if not self.config.sheets.enabled:
+            return None
+        writer = build_sheet_writer(self.config.sheets, self.config.project_root)
+        return SheetSyncService(
+            writer,
+            history,
+            self.config.resolve_path(self.config.sheets.state_path),
+            batch_size=self.config.sheets.batch_size,
+        )
 
     def _configure_logging(self) -> None:
         settings = self.config.logging
@@ -211,6 +230,13 @@ class AstaApp:
         enabled = [m for m in Market if self.data_service.is_enabled(m)]
         return self.notifications.send_sample_alerts(self.data_service.symbols, markets=enabled)
 
+    def sync_sheet(self) -> Dict[str, Any]:
+        """Export new signals to the configured spreadsheet."""
+        self.require_built()
+        if self.sheet_sync is None:
+            return {"enabled": False, "appended": 0}
+        return self.sheet_sync.sync_once()
+
     def scanner_inventory(self) -> List[dict]:
         return self.require_built().inventory()
 
@@ -234,6 +260,7 @@ class AstaApp:
                 "records": self.history.count(),
             },
             "data_cache": self.data_service.cache_stats(),
+            "sheets": self.sheet_sync.status() if self.sheet_sync else {"enabled": False},
             "events": len(self.event_bus.history),
         }
 
@@ -243,6 +270,8 @@ class AstaApp:
                 provider.close()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 pass
+        if self.sheet_sync is not None:
+            self.sheet_sync.close()
         if self.notifications is not None:
             try:
                 self.notifications.alert_manager.router.client.close()
