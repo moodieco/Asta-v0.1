@@ -16,7 +16,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6.0"]
 stream = ["websockets>=12.0"]
-sheets = ["google-auth>=2.20", "requests>=2.31"]
 
 [project.scripts]
 asta = "asta.main:main"

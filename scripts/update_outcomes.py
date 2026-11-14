@@ -32,7 +32,6 @@ def main() -> int:
     parser.add_argument("--config", default=None)
     parser.add_argument("--limit", type=int, default=200, help="open signals to check")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--no-sync", action="store_true", help="skip the spreadsheet rewrite")
     args = parser.parse_args()
 
     configure_logging("WARNING")
@@ -100,10 +99,6 @@ def main() -> int:
             }
         )
 
-    rewrite = None
-    if closed and not args.dry_run and not args.no_sync and app.sheet_sync is not None:
-        rewrite = app.sheet_sync.rewrite_all()
-
     print(
         json.dumps(
             {
@@ -113,7 +108,6 @@ def main() -> int:
                 "skipped_legacy": skipped,
                 "errors": errors,
                 "closed_detail": closed,
-                "sheet_rewrite": rewrite,
             },
             indent=2,
         )

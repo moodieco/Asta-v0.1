@@ -179,15 +179,19 @@ backfill_scanner(scanner, symbol, candles, repository, validator, source="backfi
 Replays history through the real scanner + validator, stores signals, and scores them
 against subsequent candles.
 
-### `SheetSyncService`
+### `DashboardServer` / `WebService`
 
 ```python
-sync.sync_once()   # -> {"driver": "csv", "appended": 2, "total_rows": 2, "cursor": "..."}
-sync.status()      # -> driver, target, cursor, total rows
+service = WebService(app, host="127.0.0.1", port=4310, open_browser=False)
+service.start()    # -> "http://127.0.0.1:4310/"  (serves web/dist + JSON API)
+service.status()   # -> scanners, cycles, storage, web block (used by /api/health)
+service.stop()
 ```
 
-Incremental: reads history rows newer than the cursor in `data/history/sheet_sync_state.json`,
-appends them, moves the cursor. Drivers: `CsvSheetWriter`, `GoogleSheetsWriter`.
+The API is read-only: every query opens its own `mode=ro` SQLite connection, so the
+scanner's writer is never blocked. Endpoints: `/api/health`, `/api/meta`, `/api/facets`,
+`/api/config`, `/api/signals` (filters: `status`, `scanner`, `market`, `timeframe`, `q`,
+`sort`, `limit`, `offset`), `/api/signals/<id|signal_id>`. See `docs/WEB_API.md`.
 
 ## 5. Configuration
 
@@ -238,18 +242,13 @@ channels:
   crypto: {env: DISCORD_WEBHOOK_CRYPTO, label: "#cryptic"}
 ```
 
-### `config/sheets.yaml`
+### `web:` block in `config/app.yaml`
 
 ```yaml
-enabled: true
-driver: csv | google
-csv_path: data/history/signals_export.csv
-state_path: data/history/sheet_sync_state.json
-spreadsheet_id: ""          # google: existing sheet, or empty + create_if_missing
-sheet_name: Signals
-token_path: ~/.hermes/google_token.json
-batch_size: 200
-auto_sync: true
+web:
+  host: 127.0.0.1   # loopback only - the API has no auth
+  port: 4310
+  open_browser: true
 ```
 
 Environment: `ASTA_CONFIG_DIR`, `ASTA_LOG_LEVEL`, `ASTA_LOG_FORMAT`, `ASTA_DRY_RUN`,
@@ -266,7 +265,8 @@ Environment: `ASTA_CONFIG_DIR`, `ASTA_LOG_LEVEL`, `ASTA_LOG_FORMAT`, `ASTA_DRY_R
 | `asta --list-scanners` | discovered scanners |
 | `asta --health` | providers, storage, webhooks, cache, events |
 | `asta --test-alert` / `--sample-alert` | labelled Discord checks |
-| `asta --sync-sheet` | export new signals to the configured spreadsheet |
+| `asta serve` | scanner + dashboard in one process |
+| `asta status` | JSON status of a running instance |
 | `asta --config <dir>` | alternate config directory |
 
 Exit codes: `0` ok, `1` test/sample alert failed, `2` configuration/startup error.

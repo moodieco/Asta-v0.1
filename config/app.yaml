@@ -1,5 +1,5 @@
 # Application runtime: environment, scheduling, validation, storage, providers.
-# Market universe lives in markets.yaml; sheet export in sheets.yaml.
+# Market universe lives in markets.yaml; secrets live in .env.
 # ${VAR} placeholders are expanded from the environment / .env.
 
 environment: development
@@ -20,6 +20,16 @@ storage:
   sqlite_path: data/history/asta.db
   dedup_window_seconds: 3600
   enabled: true
+
+# Local dashboard (asta serve). Loopback only - the API is unauthenticated.
+web:
+  host: 127.0.0.1
+  port: 4310
+  open_browser: true
+
+# Quick setup bookkeeping; secrets never live here (they go to .env).
+setup:
+  state_path: config/setup_state.json
 
 providers:
   forex:

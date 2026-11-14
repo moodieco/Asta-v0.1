@@ -41,15 +41,6 @@ loggers:
   httpx: ERROR
 """
 
-SHEETS = """
-enabled: true
-driver: csv
-csv_path: data/history/export.csv
-state_path: data/history/state.json
-batch_size: 50
-auto_sync: false
-"""
-
 DISCORD = """
 username: ASTA-TEST
 channels:
@@ -63,7 +54,7 @@ channels:
 
 
 def write_config_dir(
-    tmp_path, app=APP, markets=MARKETS, logging_yaml=LOGGING, discord=DISCORD, sheets=SHEETS
+    tmp_path, app=APP, markets=MARKETS, logging_yaml=LOGGING, discord=DISCORD
 ):
     directory = tmp_path / "config"
     directory.mkdir(parents=True, exist_ok=True)
@@ -71,7 +62,6 @@ def write_config_dir(
     (directory / "markets.yaml").write_text(markets)
     (directory / "logging.yaml").write_text(logging_yaml)
     (directory / "discord.yaml").write_text(discord)
-    (directory / "sheets.yaml").write_text(sheets)
     return directory
 
 
@@ -99,10 +89,8 @@ def test_merges_four_files_and_expands_env(tmp_path, monkeypatch):
     assert config.webhook_env("crypto") == "DISCORD_WEBHOOK_CRYPTO"
     assert config.channel_label("crypto") == "#cryptic-test"
     assert config.project_root == tmp_path
-    assert config.sheets.enabled is True
-    assert config.sheets.driver == "csv"
-    assert config.sheets.batch_size == 50
-    assert config.sheets.auto_sync is False
+    assert config.web.host == "127.0.0.1"
+    assert config.web.port == 4310
 
 
 def test_missing_config_dir_raises(tmp_path):

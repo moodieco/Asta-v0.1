@@ -18,22 +18,28 @@ providers ──► data_service ──► scanners ──► signal_manager ─
 | Providers: Binance crypto, **MT5 MCP forex**, Yahoo stock | done |
 | Scanners: 2 forex, 4 crypto, 2 stock | done |
 | Signal pipeline: validate, dedupe, entry/stop/target, outcome scoring | done |
-| Storage: SQLite history + CSV/Google Sheets export, 1.4k backfilled signals | done |
+| Storage: SQLite history (single source of truth), 1.4k backfilled signals | done |
+| Dashboard: `asta serve` — read-only API + React UI on 127.0.0.1:4310 | done |
+| Desktop launcher: Quick Setup wizard, start/stop/restart, system status | done |
 | Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
 | Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
 | Tooling: CLI, 5 scripts, CI (tests + lint) | done |
-| Tests | 173 passing |
+| Tests | see `pytest -q` |
 
 ## Quickstart (Bahasa Indonesia)
 
 ```bash
 cd ~/Projects/asta-v0.1
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev,sheets]"
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 cp .env.example .env                 # webhook Discord (+ token OANDA kalau dipakai)
 .venv/bin/asta --health              # provider, storage, webhook
 .venv/bin/asta --once --dry-run      # satu siklus, tidak kirim ke Discord
-.venv/bin/asta                       # scheduler (tick 60 detik)
+.venv/bin/asta serve                 # scanner + dashboard (browser terbuka otomatis)
 ```
+
+Launcher desktop (tanpa terminal): buka `ASTA.app` (lihat `docs/LAUNCHER.md`), atau
+`asta launcher`. Quick Setup dijalankan sekali; setelah itu konfigurasi diubah lewat
+Settings.
 
 ## Struktur folder
 
@@ -50,10 +56,13 @@ src/asta/
   providers/                base.py + crypto/binance/ · forex/oanda/ · stock/yahoo/
   services/                 data_service · analysis_service · notification_service
   integrations/discord/     client · embed_builder · router · alert_manager · channel_config
-  integrations/sheets/      csv_writer · google_sheets · sync
+  web/                      server · routes · queries · service   (dashboard HTTP, read-only)
+  launcher/                 app (Tk) · supervisor · wizard          (desktop launcher)
+  setup/                    state · secrets · validators · writer   (quick setup logic)
   storage/                  database · repositories/ · models/ · signal_history · cache
   utils/                    logger · time_utils · exceptions
-tests/                      unit/ (core, forex, crypto, stock) · integration/ · e2e/ · fixtures/
+web/                        Vite + React dashboard (source + dist/)
+tests/                      unit/ (core, forex, crypto, stock, web, setup, launcher) · integration/ · e2e/ · fixtures/
 scripts/                    run_asta · test_connections · validate_config · scanner_status · inspect_market
 data/                       cache/ · history/ · logs/
 ```
@@ -77,6 +86,11 @@ Setiap scanner punya folder sendiri berisi `scanner.py`, `config.yaml`, dan `REA
 ## CLI & scripts
 
 ```bash
+asta serve [--port 4310] [--no-browser]     # scanner + dashboard
+asta status                                  # JSON status of a running instance
+asta setup                                   # quick setup wizard
+asta launcher                                # desktop launcher window
+
 asta --once [--dry-run] [--markets crypto] [--scanners CXS002_VOLUME_SPIKE]
 asta --list-scanners | --health | --test-alert | --sample-alert
 asta --config /path/to/config-dir
@@ -87,7 +101,6 @@ python scripts/scanner_status.py        # inventory, health, recent signals
 python scripts/inspect_market.py --market crypto --symbols BTCUSDT --timeframes 1h
 python scripts/scan_once.py             # offline demo with synthetic candles
 python scripts/signal_frequency.py --market crypto   # alerts/day per scanner (history replay)
-python scripts/export_signals.py                     # mirror new signals to CSV / Google Sheets
 python scripts/migrate_history.py                    # JSONL -> SQLite, idempotent
 python scripts/backfill_history.py --market crypto --days 60 --commit   # historical replay
 python scripts/update_outcomes.py                    # score open signals (TP/SL/expiry)
@@ -101,15 +114,15 @@ python scripts/update_outcomes.py                    # score open signals (TP/SL
 | `config/markets.yaml` | market mana yang aktif, daftar symbol, override per scanner |
 | `config/logging.yaml` | level, format (text/json), rotating file, per-logger level |
 | `config/discord.yaml` | mapping market → env var webhook + label channel |
-| `config/sheets.yaml` | export driver (csv/google), target, cursor, auto-sync |
+| `config/setup_state.json` | quick-setup marker (written by the wizard, no secrets) |
 
 Secrets hanya di `.env` (`${VAR}` di-expand saat load). `storage.backend: jsonl | sqlite`
-menentukan penyimpanan sinyal. Export spreadsheet mengikuti `config/sheets.yaml`
-(detail: [docs/SPREADSHEET_SYNC.md](docs/SPREADSHEET_SYNC.md)).
+menentukan penyimpanan sinyal; dashboard membaca file SQLite yang sama secara read-only.
+Blok `web:` mengatur host/port dashboard.
 
 ## Documentation
 
 * [ARCHITECTURE](docs/ARCHITECTURE.md) · [API](docs/API_DOCUMENTATION.md) · [SIGNAL SPEC](docs/SIGNAL_SPECIFICATION.md)
 * [SCANNER GUIDE](docs/SCANNER_GUIDE.md) · [DATABASE SCHEMA](docs/DATABASE_SCHEMA.md)
-* [SPREADSHEET SYNC](docs/SPREADSHEET_SYNC.md) · [SECURITY](docs/SECURITY.md)
+* [LAUNCHER](docs/LAUNCHER.md) · [WEB API](docs/WEB_API.md) · [SECURITY](docs/SECURITY.md)
 * [ROADMAP](docs/DEVELOPMENT_ROADMAP.md) · [CONTRIBUTING](docs/CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)

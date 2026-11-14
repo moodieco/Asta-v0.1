@@ -23,3 +23,10 @@ data/logs/*
 *service-account*.json
 *service_account*.json
 secrets/
+
+# web build output
+web/dist/
+web/node_modules/
+
+# macOS launcher bundle (built by packaging/build_macos_app.sh)
+ASTA.app/

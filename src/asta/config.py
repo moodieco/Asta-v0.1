@@ -84,26 +84,33 @@ class LoggingSettings(BaseModel):
         return fmt
 
 
-class SheetsSettings(BaseModel):
-    enabled: bool = False
-    driver: str = "csv"
-    csv_path: str = "data/history/signals_export.csv"
-    state_path: str = "data/history/sheet_sync_state.json"
-    spreadsheet_id: str = ""
-    sheet_name: str = "Signals"
-    create_if_missing: bool = True
-    token_path: str = "~/.hermes/google_token.json"
-    service_account_path: str = ""
-    batch_size: int = 200
-    auto_sync: bool = True
+class WebSettings(BaseModel):
+    """Local dashboard listener. Loopback by default - the API has no auth."""
 
-    @field_validator("driver")
+    host: str = "127.0.0.1"
+    port: int = 4310
+    open_browser: bool = True
+
+    @field_validator("port")
     @classmethod
-    def _known_driver(cls, value: str) -> str:
-        driver = str(value).strip().lower()
-        if driver not in ("csv", "google"):
-            raise ValueError("sheets.driver must be 'csv' or 'google'")
-        return driver
+    def _valid_port(cls, value: int) -> int:
+        if not (1 <= int(value) <= 65535):
+            raise ValueError("web.port must be between 1 and 65535")
+        return int(value)
+
+    @field_validator("host")
+    @classmethod
+    def _known_host(cls, value: str) -> str:
+        host = str(value).strip() or "127.0.0.1"
+        if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+            raise ValueError("web.host must be a loopback address or 0.0.0.0")
+        return host
+
+
+class SetupSettings(BaseModel):
+    """Quick-setup bookkeeping (never holds a secret - those live in .env)."""
+
+    state_path: str = "config/setup_state.json"
 
 
 class DiscordChannelSettings(BaseModel):
@@ -133,7 +140,8 @@ class AstaConfig(BaseModel):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
-    sheets: SheetsSettings = Field(default_factory=SheetsSettings)
+    web: WebSettings = Field(default_factory=WebSettings)
+    setup: SetupSettings = Field(default_factory=SetupSettings)
     providers: Dict[str, Any] = Field(default_factory=dict)
     markets: Dict[str, MarketSettings] = Field(default_factory=dict)
     scanner_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
@@ -235,7 +243,6 @@ def load_config(
     markets = _read_yaml(directory / "markets.yaml")
     logging_cfg = _read_yaml(directory / "logging.yaml")
     discord_cfg = _read_yaml(directory / "discord.yaml")
-    sheets_cfg = _read_yaml(directory / "sheets.yaml")
 
     merged: Dict[str, Any] = dict(app)
     merged["markets"] = {
@@ -246,8 +253,6 @@ def load_config(
         merged["logging"] = logging_cfg
     if discord_cfg:
         merged["discord"] = discord_cfg
-    if sheets_cfg:
-        merged["sheets"] = sheets_cfg
 
     merged = _expand_env(merged)
     if os.getenv("ASTA_LOG_LEVEL"):

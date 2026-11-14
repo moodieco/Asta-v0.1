@@ -9,9 +9,10 @@ permissions and executes no orders.
 |---|---|---|
 | `DISCORD_WEBHOOK_*` | `.env` only | treated as credentials: anyone with the URL can post |
 | `OANDA_API_TOKEN` | `.env` only | practice token is enough for V0.1 |
-| Google service account key | `~/.asta/google_service_account.json` (0600) | outside the repo; delete + recreate if leaked |
 
-* `.env` is gitignored and created with `0600` permissions.
+* `.env` is gitignored and created with `0600` permissions (the Quick Setup wizard enforces it).
+* The dashboard API is unauthenticated and binds `127.0.0.1` only - never set `web.host: 0.0.0.0`
+  on a shared network.
 * YAML only references secrets as `${VAR}`; the loader expands them in memory.
 * Logs never print full webhook URLs: `ChannelConfig.masked()` and health output show
   `https://...abcd` only.

@@ -34,6 +34,12 @@ class ScannerScheduler:
         self.logger = logger or get_logger("asta.scheduler")
         self._last_run: Dict[str, float] = {}
         self._cycles = 0
+        self.last_cycle_at: Optional[str] = None
+
+    @property
+    def cycles(self) -> int:
+        """Completed cycles - surfaced by the dashboard status endpoint."""
+        return self._cycles
 
     # -- due calculation --------------------------------------------------
     def _interval_for(self, scanner: ScannerBase) -> float:
@@ -74,6 +80,7 @@ class ScannerScheduler:
         loop = asyncio.get_running_loop()
         report = await loop.run_in_executor(None, self.manager.run_cycle, scanner_ids)
         self._cycles += 1
+        self.last_cycle_at = utcnow().isoformat()
         return report
 
     async def run_forever(self, stop_event: Optional[asyncio.Event] = None, max_cycles: Optional[int] = None) -> None:

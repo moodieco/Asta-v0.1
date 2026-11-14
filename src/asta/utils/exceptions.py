@@ -40,9 +40,5 @@ class SignalValidationError(AstaError):
     """A candidate signal did not survive validation."""
 
 
-class SheetsError(AstaError):
-    """Spreadsheet export failed (auth, quota, bad range)."""
-
-
 class DiscordError(AstaError):
     """Discord delivery failed."""

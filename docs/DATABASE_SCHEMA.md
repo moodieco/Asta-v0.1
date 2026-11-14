@@ -61,7 +61,7 @@ CREATE INDEX idx_signals_symbol  ON signals(symbol, timeframe, created_at DESC);
 | `by_market(market, limit)` / `by_scanner(id, limit)` | filtered rows |
 | `last_timestamp(scanner_id, symbol)` | `datetime` or `None` |
 | `stats()` | `{"market:scanner_id": count}` |
-| `recorded_after(cursor, limit)` | rows for spreadsheet export |
+| `recorded_after(cursor, limit)` | rows recorded after a timestamp (dashboards, scripts) |
 | `open_signals(limit)` / `update_outcome(...)` | outcome tracking |
 | `outcome_stats()` | count + average R per status |
 

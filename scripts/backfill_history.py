@@ -7,7 +7,7 @@
     PYTHONPATH=src python scripts/backfill_history.py --market crypto --days 90 --commit
     PYTHONPATH=src python scripts/backfill_history.py --market stock --days 730 --commit
 
-Signals are tagged ``source=backfill`` (sheet column) so they never look like live alerts.
+Signals are tagged ``source=backfill`` so they never look like live alerts.
 """
 
 from __future__ import annotations

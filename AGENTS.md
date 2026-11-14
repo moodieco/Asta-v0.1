@@ -36,7 +36,10 @@ Instructions for AI coding agents and humans working in this repository.
 | New provider / broker | `providers/<market>/<broker>/` (`client.py` + `candles.py`) |
 | New persistence | `storage/` (`database.py`, `repositories/`, `models/`) |
 | Orchestration | `services/` |
-| Spreadsheet export | `integrations/sheets/` |
+| Dashboard HTTP surface (read-only API + SPA) | `web/` |
+| Desktop launcher (start/stop/status) | `launcher/` |
+| Quick setup (state, secrets, validators, YAML writer) | `setup/` |
+| React dashboard source | `web/` (repo root) |
 
 ## Invariants worth tests
 

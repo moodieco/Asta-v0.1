@@ -1,8 +1,13 @@
 """ASTA command line interface.
 
+    asta                        # scheduler loop (scanner only, no dashboard)
+    asta serve                  # scanner + dashboard on http://127.0.0.1:4310
+    asta status                 # JSON status of a running instance
+    asta setup                  # quick setup wizard (desktop window)
+    asta launcher               # desktop launcher (start/stop/status)
+
     asta --once                 # single scan cycle, then exit
     asta --once --dry-run       # scan without posting to Discord
-    asta                        # scheduler loop
     asta --list-scanners        # discovered scanners and their config
     asta --health               # providers, storage, webhooks
     asta --test-alert           # connectivity test to every webhook
@@ -12,7 +17,10 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import os
+import signal
 import sys
 from typing import List, Optional
 
@@ -21,12 +29,26 @@ from asta.bootstrap import AstaApp
 from asta.core.signal_model import Market
 from asta.utils.exceptions import AstaError
 
+COMMANDS = ("serve", "status", "setup", "launcher")
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="asta", description="ASTA V0.1 signal scanner")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default=None,
+        choices=COMMANDS,
+        help="serve = scanner + dashboard; status; setup; launcher",
+    )
     parser.add_argument("--config", default=None, help="config directory (default: config/)")
     parser.add_argument("--once", action="store_true", help="run a single scan cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="never post to Discord")
+    parser.add_argument("--host", default=None, help="dashboard bind host (default: from config)")
+    parser.add_argument("--port", type=int, default=None, help="dashboard port (default: 4310)")
+    parser.add_argument(
+        "--no-browser", action="store_true", help="serve without opening a browser"
+    )
     parser.add_argument("--list-scanners", action="store_true", help="print discovered scanners")
     parser.add_argument("--health", action="store_true", help="print provider/storage/webhook health")
     parser.add_argument(
@@ -37,9 +59,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--markets", default="", help="comma separated market filter")
     parser.add_argument("--scanners", default="", help="comma separated scanner id filter")
-    parser.add_argument(
-        "--sync-sheet", action="store_true", help="export new signals to the configured spreadsheet"
-    )
     parser.add_argument("--version", action="version", version="asta {}".format(__version__))
     return parser
 
@@ -62,8 +81,112 @@ def _parse_scanners(raw: str) -> Optional[List[str]]:
     return values or None
 
 
+async def _run_until_signal(app: AstaApp) -> None:
+    """Run the scanner loop until SIGINT/SIGTERM.
+
+    The stop event must be created *inside* the running loop: an ``asyncio.Event``
+    built before ``asyncio.run`` binds to a different (never-running) loop and the
+    wait then dies with "Future attached to a different loop".
+    """
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except (NotImplementedError, RuntimeError):  # pragma: no cover - non-POSIX
+            signal.signal(sig, lambda *_: stop.set())
+    await app.run_forever(stop_event=stop)
+
+
+def _serve(args: argparse.Namespace) -> int:
+    """Scanner + dashboard in one process: the browser is optional, the scanner is not."""
+    from asta.web.service import WebService
+
+    app = AstaApp.from_config(args.config, dry_run=True if args.dry_run else None)
+    app.build()
+    service = WebService(
+        app,
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_browser,
+    )
+    url = service.start()
+    print(
+        json.dumps(
+            {
+                "status": "serving",
+                "url": url,
+                "pid": os.getpid(),
+                "scanners": len(app.analysis) if app.analysis else 0,
+                "open_browser": not args.no_browser,
+            },
+            indent=2,
+        ),
+        flush=True,
+    )
+    try:
+        asyncio.run(_run_until_signal(app))
+    except KeyboardInterrupt:  # pragma: no cover - interactive
+        pass
+    finally:
+        service.stop()
+        app.close()
+    return 0
+
+
+def _status(args: argparse.Namespace) -> int:
+    from asta.config import load_config
+    from asta.web.service import probe
+
+    config = load_config(args.config, require=False)
+    web = getattr(config, "web", None)
+    host = args.host or getattr(web, "host", "127.0.0.1") or "127.0.0.1"
+    port = args.port or getattr(web, "port", 4310) or 4310
+    url = "http://{}:{}/".format(host, port)
+    remote = probe(url)
+    payload = {
+        "running": remote is not None,
+        "url": url,
+        "config": {
+            "environment": config.environment,
+            "storage_backend": config.storage.backend,
+            "sqlite_path": str(config.resolve_path(config.storage.sqlite_path)),
+        },
+    }
+    if remote is not None:
+        payload["server"] = remote
+    print(json.dumps(payload, indent=2))
+    return 0 if remote is not None else 1
+
+
+def _setup(args: argparse.Namespace) -> int:
+    from asta.launcher.wizard import run_wizard
+
+    return run_wizard(args.config)
+
+
+def _launcher(args: argparse.Namespace) -> int:
+    from asta.launcher.app import run_launcher
+
+    return run_launcher(args.config)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "serve":
+        try:
+            return _serve(args)
+        except AstaError as exc:
+            print("error: {}".format(exc), file=sys.stderr)
+            return 2
+    if args.command == "status":
+        return _status(args)
+    if args.command == "setup":
+        return _setup(args)
+    if args.command == "launcher":
+        return _launcher(args)
+
     try:
         app = AstaApp.from_config(args.config, dry_run=True if args.dry_run else None)
         app.build()
@@ -98,10 +221,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             results = app.send_sample_alerts()
             print(json.dumps({"sample_alerts": results}, indent=2))
             return 0 if all(item.get("ok") for item in results) else 1
-
-        if args.sync_sheet:
-            print(json.dumps(app.sync_sheet(), indent=2))
-            return 0
 
         if args.once:
             report = app.run_once(
