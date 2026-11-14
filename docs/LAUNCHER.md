@@ -85,7 +85,8 @@ Unsigned bundles can be blocked on first launch: right-click → **Open** → **
 |---|---|---|
 | Double-click does nothing, or the log shows `ImportError: … incompatible architecture (have 'arm64', need 'x86_64')` | A script-only bundle is treated as x86_64 on Apple Silicon, so LaunchServices starts the shell under Rosetta; the venv's native wheels (e.g. `pydantic_core`) are arm64-only | The stub re-executes the interpreter as `/usr/bin/arch -arm64`; `LSArchitecturePriority` lists arm64 first |
 | "ASTA is damaged / cannot be opened" | Ad-hoc signature, not notarised | Right-click → Open once, or `xattr -cr ASTA.app` |
-| Every control is the same system grey | macOS ships Tk 8.5, whose `aqua` theme ignores per-widget colours | `src/asta/launcher/theme.py` switches to `clam` and styles every widget class (dark palette, green start, red stop) |
+| Every control is the same system grey | macOS ships Tk 8.5, whose `aqua` theme ignores per-widget colours | The launcher is built from classic `tk` widgets (`flatui.py`): flat buttons, custom checkbox, dark palette |
+| Window is a **blank dark rectangle** — no text, no buttons | Tk 8.5's `clam` theme lays out but paints nothing on macOS 26 | Same fix: no ttk theme at all; `tk.Label`/`tk.Frame`/`tk.Text` are drawn by Tk itself |
 
 The window and the dashboard share one palette, so the launcher looks like part of
 the app rather than a Tk demo.

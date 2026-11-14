@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 from typing import Any, Dict, Optional
 
 from asta.config import load_config
+from asta.launcher import flatui as ttk
 from asta.launcher import theme
 from asta.launcher.supervisor import Supervisor
 from asta.launcher.wizard import Wizard

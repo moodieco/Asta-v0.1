@@ -10,11 +10,12 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional
 
 from asta.config import load_config
 from asta.core.scanner_registry import ScannerRegistry
+from asta.launcher import flatui as ttk
 from asta.launcher import theme
 from asta.launcher.supervisor import Supervisor
 from asta.setup import secrets, validators, writer
