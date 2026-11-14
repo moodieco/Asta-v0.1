@@ -95,6 +95,9 @@ class ScannerBase(ABC):
             )
         self.config = config
         self.params: Dict[str, Any] = {**self.default_params, **dict(config.params)}
+        # config may lower the warmup (short data windows, e.g. MT5 feed)
+        if "min_candles" in self.params:
+            self.min_candles = int(self.params["min_candles"])
         self.logger = get_logger("asta.scanner.{}".format(config.id))
 
     # -- properties -------------------------------------------------------

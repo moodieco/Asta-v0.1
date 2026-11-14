@@ -71,11 +71,30 @@ Guarantees: closed candles only (`filter_closed_candles`), UTC timestamps, oldes
 `ProviderError` on any failure. `BaseHttpClient` supplies retries, backoff, `Retry-After`
 handling and JSON decoding.
 
-| Provider | Package | Endpoint | Auth |
+| Provider | Package | Source | Auth |
 |---|---|---|---|
 | Binance | `providers/crypto/binance/` | `/api/v3/klines`, `/api/v3/ticker/price` | none |
-| OANDA | `providers/forex/oanda/` | `/v3/instruments/{i}/candles`, `/v3/accounts/{id}/pricing` | `Bearer $OANDA_API_TOKEN` |
-| Yahoo | `providers/stock/yahoo/` | `/v8/finance/chart/{ticker}` | none |
+| MT5 (forex) | `providers/forex/mt5/` | MCP: `get_chart_history` (terminal) → `marketdata_symbol_history` (public fallback) | bearer per MCP server |
+| Yahoo (stock) | `providers/stock/yahoo/` | `/v8/finance/chart/{ticker}` | none |
+| OANDA (optional) | `providers/forex/oanda/` | `/v3/instruments/{i}/candles` | `Bearer $OANDA_API_TOKEN` |
+
+Providers are selected per market::
+
+```yaml
+providers:
+  forex:  {type: mt5, terminal_url: ..., marketdata_url: ...}
+  crypto: {type: binance}
+  stock:  {type: yahoo}
+```
+
+### MT5 MCP notes
+
+* `get_chart_history` needs a **connected** MT5 terminal; otherwise it returns 0 bars.
+* When the terminal is disconnected the provider falls back to the public market-data MCP,
+  which serves 1h/4h/1d/1w and caps a response at ~120 bars — forex scanners are configured
+  with `min_candles: 110` and `trend_period: 100` for that window.
+* Timeframes M5/M15/M30 come only from the terminal.
+* Health check = terminal connected OR public feed reachable.
 
 Optional realtime: `providers/crypto/binance/websocket.py` (`parse_kline_message`,
 `stream_klines`) — requires `pip install "asta[stream]"`.

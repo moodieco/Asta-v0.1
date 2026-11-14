@@ -53,7 +53,11 @@ class RSIDivergenceStrategy(Strategy):
 
         stop_buffer = float(self.param("stop_buffer_pct"))
         pivot_candle = candles[divergence.second_index]
+        entry = context.price
         if divergence.direction == "bullish":
+            # price already below the divergence pivot = setup invalidated
+            if entry <= pivot_candle.low:
+                return []
             signal_type = SignalType.LONG
             structural_stop = pivot_candle.low * (1.0 - stop_buffer)
             difficulty = 0.10 if rsi_second < float(self.param("oversold")) else 0.0
@@ -64,6 +68,8 @@ class RSIDivergenceStrategy(Strategy):
                 divergence.price_change * 100.0, divergence.rsi_change, rsi_first, rsi_second
             )
         else:
+            if entry >= pivot_candle.high:
+                return []
             signal_type = SignalType.SHORT
             structural_stop = pivot_candle.high * (1.0 + stop_buffer)
             difficulty = 0.10 if rsi_second > float(self.param("overbought")) else 0.0

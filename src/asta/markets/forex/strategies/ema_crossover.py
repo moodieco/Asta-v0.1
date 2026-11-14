@@ -15,6 +15,8 @@ class ForexEMACrossoverStrategy(EMACrossoverStrategy):
         "require_trend_alignment": False,
         "min_confidence": 0.5,
         "min_candles": 220,
+        "min_risk_pct": 0.02,
+        "max_risk_pct": 3.0,
     }
 
     def evaluate(self, context):

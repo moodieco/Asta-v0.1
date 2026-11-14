@@ -58,3 +58,15 @@ def test_forex_scanners_reject_crypto_context(scanners):
     context = make_context(Market.CRYPTO, bullish_divergence_closes(), symbol="BTCUSDT")
     with pytest.raises(ScannerError):
         scanner.scan(context)
+
+
+def test_divergence_signals_have_sane_levels(scanners):
+    scanner = scanners["FXS001_RSI_DIVERGENCE"]
+    context = make_context(Market.FOREX, bullish_divergence_closes(), symbol="EUR_USD")
+    for signal in scanner.scan(context):
+        assert signal.stop_loss is not None
+        assert signal.take_profit is not None
+        if signal.signal_type is SignalType.LONG:
+            assert signal.stop_loss < signal.price < signal.take_profit
+        else:
+            assert signal.take_profit < signal.price < signal.stop_loss

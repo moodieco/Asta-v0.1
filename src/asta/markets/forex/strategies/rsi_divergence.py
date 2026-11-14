@@ -14,6 +14,8 @@ class ForexRSIDivergenceStrategy(RSIDivergenceStrategy):
         "min_confidence": 0.55,
         "volume_confirm": False,
         "min_candles": 120,
+        "min_risk_pct": 0.02,
+        "max_risk_pct": 3.0,
     }
 
     def evaluate(self, context):

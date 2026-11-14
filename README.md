@@ -15,14 +15,14 @@ providers ──► data_service ──► scanners ──► signal_manager ─
 |---|---|
 | Core (contracts, registry, manager, scheduler, event bus) | done |
 | Services (data, analysis, notification) | done |
-| Providers: Binance crypto, OANDA forex, Yahoo stock | done |
+| Providers: Binance crypto, **MT5 MCP forex**, Yahoo stock | done |
 | Scanners: 2 forex, 4 crypto, 2 stock | done |
 | Signal pipeline: validate, dedupe, entry/stop/target, outcome scoring | done |
 | Storage: SQLite history + CSV/Google Sheets export, 1.4k backfilled signals | done |
 | Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
 | Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
 | Tooling: CLI, 5 scripts, CI (tests + lint) | done |
-| Tests | 156 passing |
+| Tests | 173 passing |
 
 ## Quickstart (Bahasa Indonesia)
 
