@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>ASTA</title>
+    <link rel="stylesheet" href="panel.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b1012'/%3E%3Cpath d='M8 22l5-12 5 12M11 18h8' stroke='%2334d399' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='24' cy='10' r='2.4' fill='%2334d399'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>ASTA</h1>
+        <p class="muted">AI signal scanner · dashboard · v0.1</p>
+      </div>
+      <div id="state-pill" class="pill down">● Stopped</div>
+    </header>
+
+    <section class="card" id="status-card">
+      <div class="card-title">Status</div>
+      <dl class="grid">
+        <dt>PID</dt><dd id="s-pid" class="mono">—</dd>
+        <dt>URL</dt><dd id="s-url" class="mono">—</dd>
+        <dt>Uptime</dt><dd id="s-uptime" class="mono">—</dd>
+        <dt>Scanners</dt><dd id="s-scanners" class="mono">—</dd>
+        <dt>Signals</dt><dd id="s-signals" class="mono">—</dd>
+        <dt>Cycle</dt><dd id="s-cycle" class="mono">—</dd>
+      </dl>
+    </section>
+
+    <section class="actions">
+      <button id="btn-start" class="btn accent">▶ Start ASTA</button>
+      <button id="btn-stop" class="btn danger">■ Stop ASTA</button>
+      <button id="btn-restart" class="btn">↻ Restart</button>
+      <button id="btn-open" class="btn">☷ Open Dashboard</button>
+      <button id="btn-setup" class="btn">⚙ Quick Setup</button>
+      <button id="btn-refresh" class="btn">⟳ Refresh</button>
+    </section>
+
+    <section class="card log-card">
+      <div class="card-title">Recent log</div>
+      <pre id="log" class="log mono">no dashboard log yet</pre>
+    </section>
+
+    <footer class="muted small" id="footer"></footer>
+
+    <!-- Quick setup / settings overlay -->
+    <div id="setup" class="overlay hidden">
+      <div class="sheet">
+        <header class="sheet-head">
+          <div>
+            <h2 id="setup-title">Quick Setup</h2>
+            <p class="muted small" id="setup-step">Step 1 of 5 · Discord channels</p>
+          </div>
+          <button id="setup-close" class="btn ghost">Close</button>
+        </header>
+
+        <div class="sheet-body">
+          <div class="step" data-step="0">
+            <p class="muted small">One webhook per market channel. Values are stored in <code>.env</code>; existing valid URLs never need retyping.</p>
+            <div id="webhook-rows"></div>
+          </div>
+
+          <div class="step hidden" data-step="1">
+            <p class="muted small">Detected providers. MT5 bridge is optional — without it forex uses public market data.</p>
+            <div class="provider-grid" id="provider-grid"></div>
+            <div class="field-row">
+              <label>MT5 terminal URL<input id="mt5-url" type="text" placeholder="http://127.0.0.1:22346/mcp" /></label>
+            </div>
+            <div class="field-row">
+              <label>MT5 token<input id="mt5-token" type="password" placeholder="unchanged" /></label>
+            </div>
+            <button id="btn-validate-providers" class="btn">Test providers</button>
+            <ul id="provider-results" class="results"></ul>
+          </div>
+
+          <div class="step hidden" data-step="2">
+            <p class="muted small">Enable or disable scanners. Strategy code and parameters are not touched — only <code>scanner_overrides.&lt;ID&gt;.enabled</code>.</p>
+            <div id="scanner-list" class="scanner-list"></div>
+          </div>
+
+          <div class="step hidden" data-step="3">
+            <p class="muted small">Where the database lives and which loopback port the dashboard uses.</p>
+            <label>SQLite path<input id="db-path" type="text" /></label>
+            <label>Host<input id="host" type="text" value="127.0.0.1" /></label>
+            <label>Port<input id="port" type="number" value="4310" min="1" max="65535" /></label>
+            <label class="check"><input id="open-browser" type="checkbox" checked /> Open the dashboard after start</label>
+          </div>
+
+          <div class="step hidden" data-step="4">
+            <p class="muted small">Everything is validated before it is written. Secrets below are masked.</p>
+            <button id="btn-validate" class="btn">Run validation</button>
+            <pre id="review" class="review mono"></pre>
+            <label class="check"><input id="start-after" type="checkbox" checked /> Start ASTA now</label>
+          </div>
+        </div>
+
+        <footer class="sheet-foot">
+          <span id="setup-status" class="muted small"></span>
+          <div class="spacer"></div>
+          <button id="setup-back" class="btn">← Back</button>
+          <button id="setup-next" class="btn">Next →</button>
+          <button id="setup-save" class="btn accent hidden">Save &amp; finish</button>
+        </footer>
+      </div>
+    </div>
+
+    <script src="panel.js"></script>
+  </body>
+</html>

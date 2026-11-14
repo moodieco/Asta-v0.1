@@ -49,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-browser", action="store_true", help="serve without opening a browser"
     )
+    parser.add_argument(
+        "--browser", action="store_true", help="open the launcher panel in the default browser"
+    )
     parser.add_argument("--list-scanners", action="store_true", help="print discovered scanners")
     parser.add_argument("--health", action="store_true", help="print provider/storage/webhook health")
     parser.add_argument(
@@ -160,15 +163,15 @@ def _status(args: argparse.Namespace) -> int:
 
 
 def _setup(args: argparse.Namespace) -> int:
-    from asta.launcher.wizard import run_wizard
+    from asta.launcher.app import run_launcher
 
-    return run_wizard(args.config)
+    return run_launcher(args.config, focus_setup=True)
 
 
 def _launcher(args: argparse.Namespace) -> int:
     from asta.launcher.app import run_launcher
 
-    return run_launcher(args.config)
+    return run_launcher(args.config, in_browser=bool(getattr(args, "browser", False)))
 
 
 def main(argv: Optional[List[str]] = None) -> int:

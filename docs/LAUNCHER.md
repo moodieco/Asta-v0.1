@@ -1,69 +1,100 @@
 # ASTA Launcher
 
-A native window to start, stop and configure ASTA without a terminal.
+A window to start, stop and configure ASTA without a terminal.
 
 ```
-open ASTA.app          # or: .venv/bin/asta launcher
+open ASTA.app            # or: .venv/bin/asta launcher
+.venv/bin/asta setup     # same window, straight into Quick Setup
 ```
 
-## What the window does
+## How it works
+
+The window is a **native WebView** (WKWebView via [pywebview](https://pywebview.flowrl.com))
+pointing at `http://127.0.0.1:4311/` — a small control panel served by
+`asta.launcher.control.PanelServer`. The panel is plain HTML/CSS/JS
+(`src/asta/launcher/panel/`), so it renders with the system browser engine and looks
+like the dashboard. The scanner is a **separate, detached** process (`asta serve` on
+4310); the launcher only supervises it.
+
+```
+ASTA.app ──► asta launcher ──► PanelServer :4311 ──► panel (WebView)
+                                   │
+                                   └─ start/stop ──► asta serve :4310 (detached)
+                                                        └─ scanner + dashboard API
+```
+
+Install the window dependency once: `pip install -e ".[launcher]"` (adds `pywebview`).
+Without it, the panel still works — it opens in the default browser.
+
+## What the panel does
 
 | Control | Behaviour |
 |---|---|
-| **Start ASTA** | Spawns `asta serve` **detached** (`start_new_session`), waits for `/api/health`, then opens the dashboard in the browser. Scanner + web server run in that one process. |
-| **Stop ASTA** | `SIGTERM`, waits up to 12 s, then `SIGKILL`. Clears the pidfile. |
-| **Restart** | Stop, then start without re-opening the browser. |
+| **Start ASTA** | Spawns `asta serve` detached (`start_new_session`), waits for `/api/health`, opens the dashboard in the browser. |
+| **Stop ASTA** | `SIGTERM`, waits up to 12 s, then `SIGKILL`; clears the pidfile. |
+| **Restart** | Stop, then start again. |
 | **Open Dashboard** | Only enabled while `/api/health` answers. |
-| **System Status** | Window with the supervisor snapshot + the full health payload (pid, uptime, scanners, cycles, storage). |
-| **Quick Setup / Settings** | Five-step wizard. Shows *Quick Setup* before the first completion, *Settings* afterwards. |
+| **Quick Setup / Settings** | Five-step wizard inside the panel (below). |
+| **Refresh** | Re-reads status and the last 60 log lines. |
 
-Closing the window, the browser, or Terminal does **not** stop the scanner: the
-child is reparented to `launchd` (PPID 1) and is only stopped by the Stop button,
-`kill <pid>` or a reboot.
+Closing the window, the browser, or Terminal does **not** stop the scanner: the child
+is reparented to `launchd` (PPID 1) and only the Stop button, `kill <pid>`, or a reboot
+ends it.
 
 ## Liveness model
 
-Two independent signals, both required for "Running":
+Two independent signals:
 
 1. `data/logs/asta-serve.pid` — written by the launcher after spawn.
-2. `GET /api/health` — the real proof the process serves requests.
+2. `GET /api/health` — proof the process actually serves requests.
 
-A stale pidfile (crash, `kill -9`) therefore reports **Stopped**, never a false
-"Running". The launcher never trusts the pidfile alone.
+A stale pidfile after `kill -9` reports **Stopped**, never a false "Running".
 
-Logs: `data/logs/dashboard.log` (child stdout/stderr) and `data/logs/launcher.log`
-(when started from the `.app` bundle).
+Logs: `data/logs/dashboard.log` (child stdout/stderr), `data/logs/launcher.log`
+(WebView process, when started from the `.app`).
 
 ## Quick Setup (5 steps)
 
-**1 · Discord channels** — one webhook per market (forex/crypto/stock). Each URL is
-validated against Discord (`GET /api/webhooks/<id>/<token>`); a saved URL shows
-`✓ saved` and does not have to be retyped.
+**1 · Discord channels** — one webhook per market. Each URL is validated against
+Discord; an existing valid URL shows `✓ saved ••••abcd` and never has to be retyped.
 
-**2 · Data providers** — reads the `providers:` block. Credentials already present
-and valid are reused. MT5 bridge URL/token are optional: without them forex falls
-back to public market data.
+**2 · Data providers** — shows the detected type per market (binance / mt5 / oanda /
+yahoo), tests them live, and lets you set the optional MT5 bridge URL/token.
 
-**3 · Markets & scanners** — every discovered scanner with its timeframe and name;
-the checkboxes write `scanner_overrides.<ID>.enabled` into `config/markets.yaml`.
-Strategy code and parameters are never touched.
+**3 · Markets & scanners** — every discovered scanner with timeframe and id; the
+checkboxes write `scanner_overrides.<ID>.enabled` into `config/markets.yaml`. Strategy
+code and parameters are never touched.
 
-**4 · Local system** — SQLite path, loopback host (`127.0.0.1` or `localhost` only)
-and dashboard port (default 4310), plus "open browser after start".
+**4 · Local system** — SQLite path, loopback host, dashboard port (default 4310), and
+"open browser after start".
 
-**5 · Validate & save** — runs every check, shows a masked summary, saves, and
-optionally starts ASTA.
+**5 · Validate & save** — runs every check, prints a masked summary, saves, optionally
+starts ASTA.
 
 ### Where things are stored
 
 | Data | Location | Notes |
 |---|---|---|
-| Secrets | `.env` | written atomically, `chmod 0600`, merged with existing comments |
-| Non-secret setup | `config/app.yaml`, `config/markets.yaml` | edited line-by-line, comments preserved, re-parsed before writing |
+| Secrets | `.env` | atomic write, `chmod 0600`, merges with existing comments |
+| Non-secret setup | `config/app.yaml`, `config/markets.yaml` | line-by-line edit, comments preserved, re-parsed before writing |
 | Setup marker | `config/setup_state.json` | `completed_at` + per-step summary; **no secrets** |
 
-Setup runs once. Later changes go through **Settings** (same wizard) or the YAML
-files; the wizard re-detects existing credentials and never asks twice.
+Setup runs once; afterwards the button reads **Settings** and re-opens the same wizard.
+Existing credentials are detected, so nothing is asked twice.
+
+## Panel API
+
+Loopback only (`127.0.0.1:4311`). Every `POST` must carry `X-ASTA-Panel: 1`, so a random
+web page cannot drive it.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/launcher/status` | supervisor state + dashboard health |
+| GET | `/api/launcher/log` | last 60 log lines |
+| GET | `/api/launcher/setup` | wizard context (secrets masked) |
+| POST | `/api/launcher/start` · `stop` · `restart` · `open` | process control |
+| POST | `/api/launcher/setup/validate` | run all connectivity checks |
+| POST | `/api/launcher/setup/save` | write `.env` + YAML + state, optional start |
 
 ## Building the .app bundle
 
@@ -73,29 +104,22 @@ files; the wizard re-detects existing credentials and never asks twice.
 ```
 
 The bundle is a thin stub: `ASTA.app/Contents/MacOS/ASTA` resolves the repo from its
-own location (`../../..`) and runs `.venv/bin/python -m asta.main launcher`. Move the
-`.app` inside the repo (as built) or rebuild it where the repo lives — it assumes the
-bundle sits in the project root.
-
-Unsigned bundles can be blocked on first launch: right-click → **Open** → **Open**.
+own location (`../../..`) and runs `.venv/bin/python -m asta.main launcher`.
 
 ### macOS quirks this bundle already handles
 
-| Symptom | Cause | What the bundle does |
+| Symptom | Cause | What we do |
 |---|---|---|
-| Double-click does nothing, or the log shows `ImportError: … incompatible architecture (have 'arm64', need 'x86_64')` | A script-only bundle is treated as x86_64 on Apple Silicon, so LaunchServices starts the shell under Rosetta; the venv's native wheels (e.g. `pydantic_core`) are arm64-only | The stub re-executes the interpreter as `/usr/bin/arch -arm64`; `LSArchitecturePriority` lists arm64 first |
+| Double-click does nothing; log shows `ImportError: … incompatible architecture (have 'arm64', need 'x86_64')` | A script-only bundle is treated as x86_64 on Apple Silicon, so LaunchServices starts the shell under Rosetta while the venv's native wheels are arm64-only | The stub re-executes the interpreter as `/usr/bin/arch -arm64`; `LSArchitecturePriority` lists arm64 first |
 | "ASTA is damaged / cannot be opened" | Ad-hoc signature, not notarised | Right-click → Open once, or `xattr -cr ASTA.app` |
-| Every control is the same system grey | macOS ships Tk 8.5, whose `aqua` theme ignores per-widget colours | The launcher is built from classic `tk` widgets (`flatui.py`): flat buttons, custom checkbox, dark palette |
-| Window is a **blank dark rectangle** — no text, no buttons | Tk 8.5's `clam` theme lays out but paints nothing on macOS 26 | Same fix: no ttk theme at all; `tk.Label`/`tk.Frame`/`tk.Text` are drawn by Tk itself |
-
-The window and the dashboard share one palette, so the launcher looks like part of
-the app rather than a Tk demo.
+| Window renders grey, or completely blank | This machine's Tk 8.5: `aqua` ignores colour, `clam` paints nothing, and drawn widgets (labels/frames/canvas) never appear — only native controls do | No Tk at all: the UI is HTML in a WebView |
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| Start says "dashboard did not become ready" | Port busy or a config error. Read the tail shown in the dialog and `data/logs/dashboard.log`. |
-| Window shows Stopped but the port is open | Another `asta serve` was started outside the launcher (no pidfile). Use `asta status`, then stop it with `kill`. |
-| Wizard cannot validate webhooks | Offline or the URL is revoked; validation is a real request to Discord. |
+| Panel window blank | The panel server is down: check `lsof -nP -iTCP:4311`, then `data/logs/launcher.log`. |
+| Start says "dashboard did not become ready" | Port busy or config error; read `data/logs/dashboard.log`. |
+| Panel shows Stopped but 4310 is open | Another `asta serve` started outside the launcher (no pidfile): `asta status`, then `kill <pid>`. |
+| Validation fails for webhooks | Offline or the URL is revoked — validation is a real request to Discord. |
 | `Cannot bind 127.0.0.1:4310` | Something else owns the port: `lsof -nP -iTCP:4310 -sTCP:LISTEN`. |
