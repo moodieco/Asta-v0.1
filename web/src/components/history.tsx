@@ -1,22 +1,36 @@
 import { useEffect, useMemo, useState } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { fmtDateTime, fmtDay, fmtInt, fmtPct, fmtPrice, fmtR, relTime } from "@/lib/format"
 import { isClosed, type Signal } from "@/lib/metrics"
-import { Badge, Button, Card, Empty, SearchInput, Select, Meter } from "@/components/ui"
+import {
+  Badge,
+  Button,
+  Card,
+  Empty,
+  IconButton,
+  Meter,
+  SearchInput,
+  Select,
+  Td,
+  Th,
+  Tr,
+} from "@/components/ui"
+import { X } from "lucide-react"
 
 type SortKey = "newest" | "oldest" | "best" | "worst" | "confidence"
 
 const PAGE_SIZE = 20
 
-function statusBadge(s: Signal) {
+export function statusBadge(s: Signal) {
   if (s.status === "hit_tp") return <Badge tone="up">hit TP</Badge>
   if (s.status === "hit_sl") return <Badge tone="down">hit SL</Badge>
   if (s.status === "open") return <Badge tone="open">open</Badge>
   return <Badge>{s.status}</Badge>
 }
 
-function sideBadge(s: Signal) {
-  return s.side === "long" ? <Badge tone="up">LONG</Badge> : <Badge tone="down">SHORT</Badge>
+export function sideBadge(s: Signal) {
+  return s.side === "long" ? <Badge tone="info">LONG</Badge> : <Badge tone="pink">SHORT</Badge>
 }
 
 export function HistoryTable({ signals }: { signals: Signal[] }) {
@@ -47,7 +61,7 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let rows = signals.filter((s) => {
+    const rows = signals.filter((s) => {
       if (status !== "all" && s.status !== status) return false
       if (scanner !== "all" && s.scanner !== scanner) return false
       if (market !== "all" && s.market !== market) return false
@@ -60,7 +74,7 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
         s.side.toLowerCase().includes(q)
       )
     })
-    rows = [...rows].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       switch (sort) {
         case "oldest":
           return a.createdAt.localeCompare(b.createdAt)
@@ -74,7 +88,6 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
           return b.createdAt.localeCompare(a.createdAt)
       }
     })
-    return rows
   }, [signals, query, status, scanner, market, timeframe, sort])
 
   useEffect(() => setPage(0), [query, status, scanner, market, timeframe, sort])
@@ -93,7 +106,7 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
   return (
     <>
       <Card className="overflow-hidden">
-        <div className="flex flex-wrap items-center gap-2 border-b border-line/80 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
           <SearchInput value={query} onChange={setQuery} placeholder="Search symbol, scanner, reason…" />
           <Select
             label="Status"
@@ -110,13 +123,19 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
             label="Scanner"
             value={scanner}
             onChange={setScanner}
-            options={[{ value: "all", label: "All scanners" }, ...scalars.scanners.map((s) => ({ value: s, label: s }))]}
+            options={[
+              { value: "all", label: "All scanners" },
+              ...scalars.scanners.map((s) => ({ value: s, label: s })),
+            ]}
           />
           <Select
             label="Market"
             value={market}
             onChange={setMarket}
-            options={[{ value: "all", label: "All markets" }, ...scalars.markets.map((s) => ({ value: s, label: s }))]}
+            options={[
+              { value: "all", label: "All markets" },
+              ...scalars.markets.map((s) => ({ value: s, label: s })),
+            ]}
           />
           <Select
             label="Timeframe"
@@ -157,64 +176,71 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[12px]">
+            <table className="w-full text-[12px]">
               <thead>
-                <tr className="text-left text-[10.5px] uppercase tracking-wider text-faint">
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 font-medium">Time</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 font-medium">Symbol</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 font-medium">Side</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 font-medium">Scanner</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 font-medium">TF</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 text-right font-medium">Conf</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 text-right font-medium">Entry</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 text-right font-medium">R:R</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 font-medium">Status</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 text-right font-medium">R</th>
-                  <th className="sticky top-0 bg-surface/95 px-3 py-2 text-right font-medium">Bars</th>
+                <tr>
+                  <Th>Time</Th>
+                  <Th>Symbol</Th>
+                  <Th>Side</Th>
+                  <Th>Scanner</Th>
+                  <Th>TF</Th>
+                  <Th align="right">Confidence</Th>
+                  <Th align="right">Entry</Th>
+                  <Th align="right">R:R</Th>
+                  <Th>Status</Th>
+                  <Th align="right">R</Th>
+                  <Th align="right">Bars</Th>
                 </tr>
               </thead>
               <tbody>
                 {visible.map((s) => {
                   const closed = isClosed(s)
                   return (
-                    <tr
-                      key={s.id}
-                      onClick={() => setSelected(s)}
-                      className="cursor-pointer border-t border-line/50 transition-colors hover:bg-white/[0.035]"
-                    >
-                      <td className="whitespace-nowrap px-3 py-2 text-dim">
+                    <Tr key={s.id} onClick={() => setSelected(s)}>
+                      <Td className="whitespace-nowrap">
                         <span title={fmtDateTime(s.createdAt)}>{relTime(s.createdAt)}</span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
+                      </Td>
+                      <Td className="whitespace-nowrap">
                         <span className="font-medium text-ink">{s.symbol}</span>
                         <span className="ml-1.5 text-[10px] text-faint">{s.market}</span>
-                      </td>
-                      <td className="px-3 py-2">{sideBadge(s)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-dim">{s.scanner}</td>
-                      <td className="px-3 py-2">
-                        <span className="rounded border border-line/80 px-1 py-0.5 text-[10px] text-faint">{s.timeframe}</span>
-                      </td>
-                      <td className="px-3 py-2 text-right">
+                      </Td>
+                      <Td>{sideBadge(s)}</Td>
+                      <Td className="whitespace-nowrap">{s.scanner}</Td>
+                      <Td>
+                        <span className="rounded border border-line px-1 py-0.5 text-[10px] text-faint">
+                          {s.timeframe}
+                        </span>
+                      </Td>
+                      <Td align="right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <span className="tabnum text-dim">{s.confidence !== null ? (s.confidence * 100).toFixed(0) : "—"}</span>
+                          <span className="tabnum">
+                            {s.confidence !== null ? (s.confidence * 100).toFixed(0) : "—"}
+                          </span>
                           <div className="w-8">
-                            <Meter pct={(s.confidence ?? 0) * 100} tone="neutral" />
+                            <Meter pct={(s.confidence ?? 0) * 100} tone="info" />
                           </div>
                         </div>
-                      </td>
-                      <td className="tabnum px-3 py-2 text-right text-dim">{fmtPrice(s.price)}</td>
-                      <td className="tabnum px-3 py-2 text-right text-faint">{s.riskReward ? `${s.riskReward.toFixed(1)}` : "—"}</td>
-                      <td className="px-3 py-2">{statusBadge(s)}</td>
-                      <td
+                      </Td>
+                      <Td align="right" className="tabnum">
+                        {fmtPrice(s.price)}
+                      </Td>
+                      <Td align="right" className="tabnum text-faint">
+                        {s.riskReward ? s.riskReward.toFixed(1) : "—"}
+                      </Td>
+                      <Td>{statusBadge(s)}</Td>
+                      <Td
+                        align="right"
                         className={cn(
-                          "tabnum px-3 py-2 text-right font-medium",
-                          closed ? ((s.realizedR as number) > 0 ? "text-emerald-300" : "text-rose-300") : "text-faint",
+                          "tabnum font-medium",
+                          closed ? ((s.realizedR as number) > 0 ? "text-up" : "text-down") : "text-faint",
                         )}
                       >
                         {closed ? fmtR(s.realizedR, 1) : "—"}
-                      </td>
-                      <td className="tabnum px-3 py-2 text-right text-faint">{s.barsHeld ?? "—"}</td>
-                    </tr>
+                      </Td>
+                      <Td align="right" className="tabnum text-faint">
+                        {s.barsHeld ?? "—"}
+                      </Td>
+                    </Tr>
                   )
                 })}
               </tbody>
@@ -222,14 +248,19 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-line/80 px-4 py-2.5">
-          <Button variant="outline" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
+        <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
+          <Button variant="secondary" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
             ← Prev
           </Button>
           <span className="tabnum text-[11px] text-faint">
-            {page * PAGE_SIZE + 1}–{Math.min(filtered.length, (page + 1) * PAGE_SIZE)} / {fmtInt(filtered.length)}
+            {page * PAGE_SIZE + 1}–{Math.min(filtered.length, (page + 1) * PAGE_SIZE)} /{" "}
+            {fmtInt(filtered.length)}
           </span>
-          <Button variant="outline" onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}>
+          <Button
+            variant="secondary"
+            onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+            disabled={page >= pages - 1}
+          >
             Next →
           </Button>
         </div>
@@ -242,7 +273,7 @@ export function HistoryTable({ signals }: { signals: Signal[] }) {
 
 function Row({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-line/50 py-1.5 last:border-0">
+    <div className="flex items-baseline justify-between gap-4 border-b border-line-soft py-1.5 last:border-0">
       <span className="text-[11px] text-faint">{label}</span>
       <span className={cn("text-right text-[12px] text-dim", mono && "tabnum")}>{value}</span>
     </div>
@@ -253,13 +284,13 @@ export function SignalDrawer({ signal, onClose }: { signal: Signal | null; onClo
   if (!signal) return null
   const s = signal
   const closed = isClosed(s)
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
-      <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-line bg-[#080d0f]/98 shadow-2xl">
+  return createPortal(
+    <div className="fixed inset-0 z-[95] flex justify-end">
+      <div className="absolute inset-0 bg-[#101828]/30 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
+      <aside className="relative flex h-full w-full max-w-[470px] animate-rise flex-col border-l border-line bg-surface shadow-[var(--shadow-pop)]">
         <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[15px] font-semibold tracking-tight text-ink">{s.symbol}</span>
               {sideBadge(s)}
               {statusBadge(s)}
@@ -268,45 +299,58 @@ export function SignalDrawer({ signal, onClose }: { signal: Signal | null; onClo
               {s.scanner} · {s.timeframe} · {s.market} · {s.levelsSource || "levels n/a"}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="cursor-pointer rounded-md border border-line px-2 py-1 text-[11px] text-faint transition-colors hover:text-ink"
-          >
-            esc
-          </button>
+          <IconButton label="Close" onClick={onClose}>
+            <X className="h-3.5 w-3.5" />
+          </IconButton>
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-3">
           <div className="mb-3 grid grid-cols-3 gap-2">
-            <div className="rounded-lg border border-line/80 bg-white/[0.02] p-2.5">
+            <div className="rounded-xl border border-line bg-surface-2 p-2.5">
               <div className="text-[10px] uppercase tracking-wider text-faint">Entry</div>
-              <div className="tabnum mt-0.5 text-[13px] text-ink">{fmtPrice(s.price)}</div>
+              <div className="tabnum mt-0.5 text-[13px] font-medium text-ink">{fmtPrice(s.price)}</div>
             </div>
-            <div className="rounded-lg border border-line/80 bg-white/[0.02] p-2.5">
+            <div className="rounded-xl border border-down/15 bg-down-soft/50 p-2.5">
               <div className="text-[10px] uppercase tracking-wider text-faint">Stop</div>
-              <div className="tabnum mt-0.5 text-[13px] text-rose-300">{fmtPrice(s.stopLoss)}</div>
+              <div className="tabnum mt-0.5 text-[13px] font-medium text-down">{fmtPrice(s.stopLoss)}</div>
             </div>
-            <div className="rounded-lg border border-line/80 bg-white/[0.02] p-2.5">
+            <div className="rounded-xl border border-up/15 bg-up-soft/50 p-2.5">
               <div className="text-[10px] uppercase tracking-wider text-faint">Target</div>
-              <div className="tabnum mt-0.5 text-[13px] text-emerald-300">{fmtPrice(s.takeProfit)}</div>
+              <div className="tabnum mt-0.5 text-[13px] font-medium text-up">{fmtPrice(s.takeProfit)}</div>
             </div>
           </div>
 
           <section className="mb-4">
-            <h4 className="mb-1 text-[10.5px] uppercase tracking-wider text-faint">Outcome</h4>
-            <div className="rounded-lg border border-line/80 bg-white/[0.02] px-3 py-1.5">
-              <Row label="Realized R" mono value={closed ? <span className={cn((s.realizedR as number) > 0 ? "text-emerald-300" : "text-rose-300")}>{fmtR(s.realizedR)}</span> : "open"} />
+            <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">Outcome</h4>
+            <div className="rounded-xl border border-line bg-surface-2 px-3 py-1.5">
+              <Row
+                label="Realized R"
+                mono
+                value={
+                  closed ? (
+                    <span className={(s.realizedR as number) > 0 ? "text-up" : "text-down"}>
+                      {fmtR(s.realizedR)}
+                    </span>
+                  ) : (
+                    "open"
+                  )
+                }
+              />
               <Row label="Risk / reward" mono value={s.riskReward ? `${s.riskReward.toFixed(2)} : 1` : "—"} />
               <Row label="Risk pct" mono value={s.riskPct !== null ? fmtPct(s.riskPct, 2) : "—"} />
               <Row label="Bars held" mono value={s.barsHeld ?? "—"} />
-              <Row label="Confidence" mono value={s.confidence !== null ? `${(s.confidence * 100).toFixed(1)}%` : "—"} />
+              <Row
+                label="Confidence"
+                mono
+                value={s.confidence !== null ? `${(s.confidence * 100).toFixed(1)}%` : "—"}
+              />
               <Row label="ATR" mono value={s.atr !== null ? s.atr.toFixed(4) : "—"} />
             </div>
           </section>
 
           <section className="mb-4">
-            <h4 className="mb-1 text-[10.5px] uppercase tracking-wider text-faint">Timeline</h4>
-            <div className="rounded-lg border border-line/80 bg-white/[0.02] px-3 py-1.5">
+            <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">Timeline</h4>
+            <div className="rounded-xl border border-line bg-surface-2 px-3 py-1.5">
               <Row label="Signal created" value={fmtDateTime(s.createdAt)} />
               <Row label="Closed" value={closed ? fmtDateTime(s.closedAt) : "—"} />
               <Row label="Expires" value={fmtDateTime(s.expiresAt)} />
@@ -316,16 +360,18 @@ export function SignalDrawer({ signal, onClose }: { signal: Signal | null; onClo
           </section>
 
           <section className="mb-4">
-            <h4 className="mb-1 text-[10.5px] uppercase tracking-wider text-faint">Reason</h4>
-            <p className="rounded-lg border border-line/80 bg-white/[0.02] px-3 py-2.5 text-[12px] leading-relaxed text-dim">
+            <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">Reason</h4>
+            <p className="rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-[12px] leading-relaxed text-dim">
               {s.reason || "No reason recorded."}
             </p>
           </section>
 
           {Object.keys(s.indicators).length > 0 ? (
             <section>
-              <h4 className="mb-1 text-[10.5px] uppercase tracking-wider text-faint">Indicators</h4>
-              <div className="rounded-lg border border-line/80 bg-white/[0.02] px-3 py-1.5">
+              <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">
+                Indicators
+              </h4>
+              <div className="rounded-xl border border-line bg-surface-2 px-3 py-1.5">
                 {Object.entries(s.indicators).map(([k, v]) => (
                   <Row key={k} label={k} mono value={typeof v === "object" ? JSON.stringify(v) : String(v)} />
                 ))}
@@ -334,10 +380,11 @@ export function SignalDrawer({ signal, onClose }: { signal: Signal | null; onClo
           ) : null}
         </div>
 
-        <footer className="border-t border-line px-5 py-3 text-[10.5px] text-faint">
-          {fmtDay(s.createdAt)} · clicked row detail · {s.strategy || s.scanner}
+        <footer className="border-t border-line bg-surface-2 px-5 py-3 text-[10.5px] text-faint">
+          {fmtDay(s.createdAt)} · {s.strategy || s.scanner} · read-only view
         </footer>
       </aside>
-    </div>
+    </div>,
+    document.body,
   )
 }

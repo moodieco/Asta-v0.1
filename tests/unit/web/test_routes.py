@@ -104,6 +104,36 @@ def test_routes_dispatch(db_path: Path) -> None:
     assert status == 404
 
 
+def test_setup_and_system_endpoints_are_optional(db_path: Path) -> None:
+    """Without providers the endpoints answer 200 with a clear 'unavailable' flag."""
+    routes = Routes(SignalQueries(db_path))
+    assert routes.dispatch("/api/setup") == (200, {"available": False})
+    assert routes.dispatch("/api/system") == (200, {"available": False})
+
+
+def test_setup_and_system_endpoints_forward_the_providers(db_path: Path) -> None:
+    """The dashboard must never receive a raw secret from /api/setup."""
+    setup_payload = {
+        "available": True,
+        "complete": True,
+        "webhooks": {"crypto": {"env": "DISCORD_WEBHOOK_CRYPTO", "configured": True, "masked": "••••••••abcd"}},
+    }
+    system_payload = {"available": True, "cpuPct": 1.5, "database": {"sizeBytes": 1024}}
+    routes = Routes(
+        SignalQueries(db_path),
+        setup_summary=lambda: setup_payload,
+        system_snapshot=lambda: system_payload,
+    )
+
+    status, payload = routes.dispatch("/api/setup")
+    assert status == 200 and payload["complete"] is True
+    masked = payload["webhooks"]["crypto"]["masked"]
+    assert masked.startswith("•") and "discord.com/api/webhooks" not in json.dumps(payload)
+
+    status, payload = routes.dispatch("/api/system")
+    assert status == 200 and payload["cpuPct"] == 1.5
+
+
 def test_server_serves_spa_and_api(db_path: Path, tmp_path: Path) -> None:
     web_dir = tmp_path / "dist"
     (web_dir / "assets").mkdir(parents=True)

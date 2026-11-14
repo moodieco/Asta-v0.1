@@ -20,6 +20,7 @@ from typing import Optional
 from asta.config import load_config
 from asta.launcher.control import PanelServer
 from asta.launcher.supervisor import Supervisor
+from asta.setup.state import SetupState
 from asta.utils.logger import get_logger
 
 logger = get_logger("asta.launcher")
@@ -27,8 +28,13 @@ logger = get_logger("asta.launcher")
 PANEL_PORT = 4311
 
 
-def _open_window(url: str, title: str = "ASTA") -> None:
-    """Show the panel in a native window; fall back to the default browser."""
+def _open_window(
+    url: str,
+    title: str = "ASTA",
+    width: int = 1280,
+    height: int = 860,
+) -> None:
+    """Show the app in a native window; fall back to the default browser."""
     try:
         import webview  # type: ignore
     except ImportError:
@@ -38,10 +44,10 @@ def _open_window(url: str, title: str = "ASTA") -> None:
         webview.create_window(
             title,
             url,
-            width=620,
-            height=880,
+            width=width,
+            height=height,
             min_size=(520, 640),
-            background_color="#0b1012",
+            background_color="#f5f6f9",
         )
         webview.start()
         return
@@ -61,6 +67,12 @@ def run_launcher(
     focus_setup: bool = False,
     in_browser: bool = False,
 ) -> int:
+    """Open the single ASTA window.
+
+    No setup yet  -> the control panel's setup wizard.
+    Engine up     -> the dashboard itself (one app, not a second panel).
+    Engine down   -> the control panel, which can start it and then hand over.
+    """
     config = load_config(config_dir, require=False)
     root = Path(config.project_root).resolve()
     supervisor = Supervisor(
@@ -78,18 +90,28 @@ def run_launcher(
         panel = PanelServer(supervisor, port=0, config_dir=config_dir)
         url = panel.start()
 
-    target = url + ("?setup=1" if focus_setup else "")
-    print("ASTA launcher panel: %s" % target, file=sys.stderr, flush=True)
+    state = SetupState.load(config.resolve_path(config.setup.state_path))
+    dashboard_ready = state.complete and supervisor.health() is not None
+
+    target = supervisor.url if dashboard_ready and not focus_setup else url
+    if not dashboard_ready and focus_setup:
+        target = url + "?setup=1"
+
+    print("ASTA launcher: %s" % target, file=sys.stderr, flush=True)
     try:
         if in_browser:
             webbrowser.open(target)
-            print("panel running on %s - press Ctrl+C to close it" % url)
+            print("ASTA running on %s - press Ctrl+C to close it" % url)
             try:
                 while True:
                     time.sleep(3600)
             except KeyboardInterrupt:
                 return 0
-        _open_window(target)
+        _open_window(
+            target,
+            width=1280 if dashboard_ready else 620,
+            height=860 if dashboard_ready else 880,
+        )
         return 0
     finally:
         panel.stop()

@@ -7,18 +7,29 @@ the dashboard owns its socket thread. Nothing here writes to the database.
 from __future__ import annotations
 
 import json
+import os
+import re
+import resource
 import threading
 import time
 import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
+from asta.setup import secrets
+from asta.setup.state import SetupState
 from asta.utils.logger import get_logger
 from asta.web.server import DashboardServer
 
 logger = get_logger("asta.web.service")
+
+LOG_LINE = re.compile(
+    r"^(?P<at>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|\s*(?P<level>[A-Z]+)\s*\|\s*"
+    r"(?P<module>[^|]+?)\s*\|\s*(?P<message>.*)$"
+)
+TAIL_BYTES = 96 * 1024
 
 
 class WebService:
@@ -38,6 +49,9 @@ class WebService:
         self.port = int(port or getattr(web_cfg, "port", None) or 4310)
         self.web_dir = Path(web_dir or project_root / "web" / "dist").expanduser()
         self.open_browser = open_browser
+        self.root = Path(project_root).resolve()
+        self.started_at = time.time()
+        self._cpu_mark: Dict[str, float] = {"t": time.time(), "cpu": self._process_cpu_seconds()}
         self.server = DashboardServer(
             db_path=config.resolve_path(config.storage.sqlite_path),
             web_dir=self.web_dir,
@@ -45,6 +59,8 @@ class WebService:
             port=self.port,
             status_provider=self.status,
             config_summary=self.config_summary,
+            setup_summary=self.setup_summary,
+            system_snapshot=self.system_snapshot,
         )
 
     # -- lifecycle --------------------------------------------------------
@@ -148,6 +164,195 @@ class WebService:
             "channels": sorted(
                 channel.env for channel in (config.discord.channels or {}).values()
             ),
+        }
+
+    # -- setup state for the in-dashboard wizard --------------------------
+    def setup_summary(self) -> Dict[str, Any]:
+        """Real setup state: masked secrets only, never a webhook URL."""
+        config = self.app.config
+        state_path = config.resolve_path(config.setup.state_path)
+        state = SetupState.load(state_path)
+        env = secrets.read_env(self.root / ".env")
+
+        webhooks: Dict[str, Any] = {}
+        channels: List[Dict[str, Any]] = []
+        for market, channel in (config.discord.channels or {}).items():
+            value = env.get(channel.env, "")
+            webhooks[market] = {
+                "env": channel.env,
+                "label": getattr(channel, "label", "") or "",
+                "configured": secrets.is_configured(value),
+                "masked": secrets.mask(value),
+            }
+            channels.append(
+                {"market": market, "env": channel.env, "label": getattr(channel, "label", "") or ""}
+            )
+
+        providers: Dict[str, Any] = {}
+        for market, settings in (config.providers or {}).items():
+            if not isinstance(settings, dict):
+                continue
+            providers[market] = {
+                "type": settings.get("type", ""),
+                "configured": True,
+                "terminalUrlConfigured": bool(settings.get("terminal_url")),
+                "tokenConfigured": secrets.is_configured(
+                    env.get("MT5_TERMINAL_TOKEN") or settings.get("terminal_token")
+                ),
+            }
+
+        db_path = config.resolve_path(config.storage.sqlite_path)
+        return {
+            "available": True,
+            "complete": state.complete,
+            "completedAt": state.data.get("completed_at"),
+            "updatedAt": state.data.get("updated_at"),
+            "steps": {name: state.step(name) for name in ("discord", "providers", "scanners", "system", "review")},
+            "completedSteps": state.completed_steps(),
+            "webhooks": webhooks,
+            "channels": channels,
+            "providers": providers,
+            "markets": {
+                name: {
+                    "enabled": bool(getattr(item, "enabled", False)),
+                    "symbols": list(getattr(item, "symbols", []) or []),
+                }
+                for name, item in (config.markets or {}).items()
+            },
+            "scanners": self._inventory(),
+            "system": {
+                "dbPath": str(db_path),
+                "dbExists": db_path.exists(),
+                "host": self.host,
+                "port": self.port,
+                "environment": config.environment,
+                "root": str(self.root),
+            },
+        }
+
+    def _inventory(self) -> List[Dict[str, Any]]:
+        try:
+            return [
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "market": item["market"],
+                    "timeframe": item["timeframe"],
+                    "enabled": item["enabled"],
+                }
+                for item in self.app.scanner_inventory()
+            ]
+        except Exception:  # noqa: BLE001 - the UI must render without the engine
+            return []
+
+    # -- system snapshot --------------------------------------------------
+    @staticmethod
+    def _process_cpu_seconds() -> float:
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        return float(usage.ru_utime + usage.ru_stime)
+
+    def _cpu_percent(self) -> Optional[float]:
+        """CPU% of this process since the previous snapshot (real, sampled)."""
+        now = time.time()
+        cpu = self._process_cpu_seconds()
+        previous = self._cpu_mark
+        elapsed = max(1e-6, now - previous["t"])
+        pct = ((cpu - previous["cpu"]) / elapsed) * 100.0
+        self._cpu_mark = {"t": now, "cpu": cpu}
+        if pct < 0 or pct > 100 * max(1, os.cpu_count() or 1):
+            return None
+        return round(pct, 1)
+
+    @staticmethod
+    def _rss_bytes() -> Optional[int]:
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        raw = float(usage.ru_maxrss)
+        # macOS reports bytes, Linux kilobytes.
+        return int(raw if raw > 10_000_000 or os.uname().sysname == "Darwin" else raw * 1024)
+
+    def _log_snapshot(self) -> Dict[str, Any]:
+        logs_dir = self.root / "data" / "logs"
+        target = logs_dir / "asta.log"
+        if not target.is_file():
+            return {"path": str(target), "available": False, "errors": 0, "warnings": 0, "recent": []}
+        size = target.stat().st_size
+        try:
+            with target.open("rb") as stream:
+                stream.seek(max(0, size - TAIL_BYTES))
+                raw = stream.read().decode("utf-8", errors="replace")
+        except OSError:
+            return {"path": str(target), "available": False, "errors": 0, "warnings": 0, "recent": []}
+        lines = raw.splitlines()
+        errors = 0
+        warnings = 0
+        recent: List[Dict[str, Any]] = []
+        for line in lines:
+            match = LOG_LINE.match(line)
+            if not match:
+                continue
+            level = match.group("level")
+            if level in ("ERROR", "CRITICAL"):
+                errors += 1
+            elif level == "WARNING":
+                warnings += 1
+            if level in ("ERROR", "CRITICAL", "WARNING"):
+                recent.append(
+                    {
+                        "at": match.group("at"),
+                        "level": "error" if level in ("ERROR", "CRITICAL") else "warning",
+                        "module": match.group("module").strip(),
+                        "message": match.group("message").strip()[:280],
+                    }
+                )
+        return {
+            "path": str(target),
+            "available": True,
+            "sizeBytes": size,
+            "errors": errors,
+            "warnings": warnings,
+            "sampledLines": len(lines),
+            "recent": recent[-24:],
+        }
+
+    def system_snapshot(self) -> Dict[str, Any]:
+        """Real process/system metrics; nothing here is simulated."""
+        config = self.app.config
+        status = self.status()
+        db_path = config.resolve_path(config.storage.sqlite_path)
+        db_size = 0
+        for suffix in ("", "-wal", "-shm"):
+            candidate = Path(str(db_path) + suffix)
+            try:
+                db_size += candidate.stat().st_size
+            except OSError:
+                pass
+        try:
+            load = [round(value, 2) for value in os.getloadavg()]
+        except (OSError, AttributeError):
+            load = None
+        return {
+            "version": __import__("asta").__version__,
+            "pid": os.getpid(),
+            "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.started_at)),
+            "uptimeSeconds": round(time.time() - self.started_at, 1),
+            "loadAvg": load,
+            "cpuPct": self._cpu_percent(),
+            "rssBytes": self._rss_bytes(),
+            "threads": threading.active_count(),
+            "database": {
+                "path": str(db_path),
+                "sizeBytes": db_size,
+                "available": db_path.exists(),
+                "signals": status.get("storage", {}).get("records"),
+            },
+            "logs": self._log_snapshot(),
+            "cycles": status.get("cycles"),
+            "lastCycleAt": status.get("lastCycleAt"),
+            "storage": status.get("storage"),
+            "scanners": {"total": status.get("scanners"), "enabled": status.get("enabledScanners")},
+            "environment": status.get("environment"),
+            "dryRun": status.get("dryRun"),
+            "web": status.get("web"),
         }
 
 

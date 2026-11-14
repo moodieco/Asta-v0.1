@@ -133,6 +133,8 @@ class DashboardServer:
         port: int = 4310,
         status_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         config_summary: Optional[Callable[[], Dict[str, Any]]] = None,
+        setup_summary: Optional[Callable[[], Dict[str, Any]]] = None,
+        system_snapshot: Optional[Callable[[], Dict[str, Any]]] = None,
     ):
         self.host = host
         self.port = int(port)
@@ -141,6 +143,8 @@ class DashboardServer:
             SignalQueries(db_path),
             status_provider=status_provider,
             config_summary=config_summary,
+            setup_summary=setup_summary,
+            system_snapshot=system_snapshot,
         )
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None

@@ -16,6 +16,8 @@ never block the scanner's writer (WAL is enabled).
 | GET | `/api/meta` | aggregates: `total`, `closed`, `open`, `wins`, `losses`, `winRate`, `expectancyR`, `netR`, `profitFactor`, `firstSignal`, `lastSignal`, `generatedAt` |
 | GET | `/api/facets` | distinct `scanners`, `markets`, `timeframes` |
 | GET | `/api/config` | sanitized setup: environment, storage backend, web host/port, markets, provider types, scanners, channel env names. **Never secrets.** |
+| GET | `/api/setup` | setup state for the in-dashboard wizard: `complete`, `completedAt`, per-step summaries, `webhooks` (env name + `configured` + `masked`), providers, market universes, scanner inventory, `system{dbPath,host,port,environment,root}`. **Masked values only — never a full webhook URL.** |
+| GET | `/api/system` | live process metrics: `uptimeSeconds`, `cpuPct` (sampled), `rssBytes`, `loadAvg`, `threads`, `database{path,sizeBytes,available,signals}`, `logs{path,errors,warnings,recent[]}`, `scanners{total,enabled}`, `cycles`, `lastCycleAt`, `web` |
 | GET | `/api/signals` | `{meta, signals[], total, offset, hasMore, generatedAt}` |
 | GET | `/api/signals/<id\|signal_id>` | one signal (404 when absent) |
 

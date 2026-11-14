@@ -1,36 +1,65 @@
 @import "tailwindcss";
 
+/*
+ * ASTA — light, pastel, minimalist SaaS.
+ * White + light grey ground, soft pastel accents, rounded cards, soft shadows.
+ * Every colour lives here as a token so no page hardcodes a hex.
+ */
 @theme {
-  --color-bg: #06090a;
-  --color-surface: #0a1012;
-  --color-surface-2: #0d1416;
-  --color-line: #172120;
-  --color-line-soft: #101a19;
-  --color-ink: #e9f1ee;
-  --color-muted: #83959180;
-  --color-dim: #8fa39e;
-  --color-faint: #536460;
-  --color-up: #34d399;
-  --color-up-2: #5eead4;
-  --color-down: #fb7185;
-  --color-down-2: #f43f5e;
-  --color-warn: #fbbf24;
-  --color-info: #7dd3fc;
+  --color-bg: #f5f6f9;
+  --color-bg-deep: #eef1f5;
+  --color-surface: #ffffff;
+  --color-surface-2: #fafbfd;
+  --color-surface-3: #f2f5f9;
+  --color-line: #e7ebf1;
+  --color-line-soft: #f0f3f8;
 
-  --font-sans: "Inter var", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --color-ink: #101828;
+  --color-dim: #4f5f76;
+  --color-faint: #8b97a8;
+
+  /* semantic */
+  --color-up: #0f9f6e;
+  --color-up-soft: #d9f7e9;
+  --color-down: #e23d5a;
+  --color-down-soft: #fee2e6;
+  --color-warn: #b7791f;
+  --color-warn-soft: #fef3c7;
+  --color-info: #2f6fed;
+  --color-info-soft: #e3ecff;
+  --color-mint: #10a99a;
+  --color-mint-soft: #d5f5f0;
+  --color-pink: #d6468c;
+  --color-pink-soft: #fde7f2;
+  --color-violet: #7c6cf0;
+  --color-violet-soft: #ece9ff;
+  --color-slate-soft: #eef1f5;
+
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
-  --animate-gradient: gradient 8s linear infinite;
-  --animate-float: float 7s ease-in-out infinite;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 28px -20px rgba(16, 24, 40, 0.18);
+  --shadow-pop: 0 18px 48px -20px rgba(16, 24, 40, 0.28), 0 2px 6px rgba(16, 24, 40, 0.05);
+  --shadow-pastel: 0 10px 30px -18px rgba(47, 111, 237, 0.35);
+
+  --animate-gradient: gradient 9s linear infinite;
+  --animate-rise: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 
   @keyframes gradient {
     to {
       background-position: var(--bg-size) 0;
     }
   }
-  @keyframes float {
-    0%, 100% { transform: translateY(0) }
-    50% { transform: translateY(-6px) }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 
@@ -39,7 +68,7 @@
     border-color: var(--color-line);
   }
   html {
-    color-scheme: dark;
+    color-scheme: light;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
@@ -48,13 +77,17 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     background-image:
-      radial-gradient(900px 500px at 12% -10%, rgba(52, 211, 153, 0.09), transparent 65%),
-      radial-gradient(700px 420px at 92% 4%, rgba(125, 211, 252, 0.06), transparent 60%),
-      radial-gradient(600px 600px at 60% 110%, rgba(94, 234, 212, 0.04), transparent 60%);
+      radial-gradient(760px 380px at 6% -8%, rgba(219, 234, 254, 0.55), transparent 62%),
+      radial-gradient(640px 360px at 96% 0%, rgba(209, 250, 229, 0.5), transparent 60%),
+      radial-gradient(560px 380px at 70% 104%, rgba(252, 231, 243, 0.4), transparent 60%);
     background-attachment: fixed;
   }
   ::selection {
-    background: rgba(52, 211, 153, 0.28);
+    background: rgba(47, 111, 237, 0.16);
+  }
+  :focus-visible {
+    outline: 2px solid rgba(47, 111, 237, 0.45);
+    outline-offset: 2px;
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -64,25 +97,34 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1c2a27;
+    background: #d8dfe8;
     border-radius: 999px;
     border: 2px solid var(--color-bg);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #26373380;
+    background: #c3ccd8;
+  }
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
   }
 }
 
 @utility tabnum {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1, "cv01" 1;
+  font-feature-settings: "tnum" 1;
 }
 
 @utility card-surface {
-  background: linear-gradient(160deg, rgba(15, 22, 24, 0.92), rgba(8, 13, 14, 0.92));
+  background: var(--color-surface);
   border: 1px solid var(--color-line);
+  box-shadow: var(--shadow-card);
 }
 
 @utility hairline-top {
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+}
+
+@utility panel-scroll {
+  scrollbar-width: thin;
 }

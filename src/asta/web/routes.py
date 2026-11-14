@@ -25,10 +25,14 @@ class Routes:
         queries: SignalQueries,
         status_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         config_summary: Optional[Callable[[], Dict[str, Any]]] = None,
+        setup_summary: Optional[Callable[[], Dict[str, Any]]] = None,
+        system_snapshot: Optional[Callable[[], Dict[str, Any]]] = None,
     ):
         self.queries = queries
         self.status_provider = status_provider
         self.config_summary = config_summary
+        self.setup_summary = setup_summary
+        self.system_snapshot = system_snapshot
 
     # -- helpers ----------------------------------------------------------
     @staticmethod
@@ -75,6 +79,16 @@ class Routes:
             if self.config_summary is None:
                 return 200, {"available": False}
             return 200, self.config_summary()
+
+        if path == "/api/setup":
+            if self.setup_summary is None:
+                return 200, {"available": False}
+            return 200, self.setup_summary()
+
+        if path == "/api/system":
+            if self.system_snapshot is None:
+                return 200, {"available": False}
+            return 200, self.system_snapshot()
 
         if path == "/api/signals":
             signals, total = self.queries.list_signals(

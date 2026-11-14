@@ -1,6 +1,6 @@
 # ASTA Launcher
 
-A window to start, stop and configure ASTA without a terminal.
+One window for the whole app: start ASTA, configure it, and use the dashboard without a terminal.
 
 ```
 open ASTA.app            # or: .venv/bin/asta launcher
@@ -9,18 +9,25 @@ open ASTA.app            # or: .venv/bin/asta launcher
 
 ## How it works
 
-The window is a **native WebView** (WKWebView via [pywebview](https://pywebview.flowrl.com))
-pointing at `http://127.0.0.1:4311/` — a small control panel served by
-`asta.launcher.control.PanelServer`. The panel is plain HTML/CSS/JS
-(`src/asta/launcher/panel/`), so it renders with the system browser engine and looks
-like the dashboard. The scanner is a **separate, detached** process (`asta serve` on
-4310); the launcher only supervises it.
+The window is a **native WebView** (WKWebView via [pywebview](https://pywebview.flowrl.com)).
+What it shows depends on state, so the launcher and the dashboard are one product:
+
+| State | Window |
+|---|---|
+| Setup not finished | the control panel, opened on the setup wizard |
+| Setup finished, engine running | the dashboard itself (`http://localhost:4310/`), 1280×860 |
+| Engine stopped | the control panel, which can start it and hand over |
+
+The control panel is served by `asta.launcher.control.PanelServer` on
+`127.0.0.1:4311`; it is plain HTML/CSS/JS, so it renders with the system browser
+engine. The scanner is a **separate, detached** process (`asta serve` on 4310); the
+launcher only supervises it.
 
 ```
-ASTA.app ──► asta launcher ──► PanelServer :4311 ──► panel (WebView)
+ASTA.app ──► asta launcher ──► PanelServer :4311 ──► panel (when engine is down / setup needed)
                                    │
                                    └─ start/stop ──► asta serve :4310 (detached)
-                                                        └─ scanner + dashboard API
+                                                        └─ scanner + dashboard SPA/API
 ```
 
 Install the window dependency once: `pip install -e ".[launcher]"` (adds `pywebview`).
