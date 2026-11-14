@@ -60,7 +60,7 @@ async function refresh() {
     const records = (health.storage || {}).records ?? "—";
     $("#s-signals").textContent = `${signals} (${records} records)`;
     $("#s-cycle").textContent = health.lastCycleAt
-      ? `${String(health.lastCycleAt).slice(0, 19).replace("T", " ")} · ${health.cycles ?? "—"} cycles`
+      ? `${String(health.lastCycleAt).slice(0, 19).replace("T", " ")} · ${health.cycles ?? "—"} ${health.cycles === 1 ? "cycle" : "cycles"}`
       : "—";
 
     $("#btn-start").disabled = running;
