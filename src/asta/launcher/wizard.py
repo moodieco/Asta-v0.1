@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from asta.config import load_config
 from asta.core.scanner_registry import ScannerRegistry
+from asta.launcher import theme
 from asta.launcher.supervisor import Supervisor
 from asta.setup import secrets, validators, writer
 from asta.setup.state import SetupState
@@ -85,9 +86,12 @@ def load_context(config_dir: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
-class Wizard(tk.Tk):
-    def __init__(self, config_dir: Optional[str] = None, settings_mode: bool = False):
-        super().__init__()
+class Wizard(tk.Toplevel):
+    """A Toplevel so the launcher can open it without a second Tk root."""
+
+    def __init__(self, master: Optional[tk.Misc] = None, config_dir: Optional[str] = None,
+                 settings_mode: bool = False):
+        super().__init__(master)
         self.config_dir = config_dir
         self.settings_mode = settings_mode
         self.context = load_context(config_dir)
@@ -98,9 +102,10 @@ class Wizard(tk.Tk):
             self.title("ASTA — Settings")
         else:
             self.title("ASTA — Quick Setup")
-        self.geometry("760x620")
+        self.geometry("780x640")
         self.minsize(720, 560)
         self.configure(padx=18, pady=14)
+        self.style = theme.apply(self)
 
         self.vars: Dict[str, Any] = {}
         self.results: Dict[str, List[Dict[str, Any]]] = {"webhooks": [], "providers": [], "local": []}
@@ -121,23 +126,23 @@ class Wizard(tk.Tk):
         header = ttk.Frame(self)
         header.pack(fill="x")
         title = "ASTA settings" if (self.settings_mode or self.state.complete) else "ASTA quick setup"
-        ttk.Label(header, text=title, font=("Helvetica", 17, "bold")).pack(anchor="w")
-        self.step_label = ttk.Label(header, text="", font=("Helvetica", 11))
+        ttk.Label(header, text=title, style="Title.TLabel").pack(anchor="w")
+        self.step_label = ttk.Label(header, text="", style="Muted.TLabel")
         self.step_label.pack(anchor="w", pady=(2, 0))
-        self.hint_label = ttk.Label(header, text="", foreground="#666666", wraplength=700, justify="left")
+        self.hint_label = ttk.Label(header, text="", style="Faint.TLabel", wraplength=700, justify="left")
         self.hint_label.pack(anchor="w", pady=(2, 0))
         ttk.Separator(self).pack(fill="x", pady=(10, 0))
 
     def _build_footer(self) -> None:
         footer = ttk.Frame(self)
         footer.pack(fill="x", pady=(12, 0))
-        self.status = ttk.Label(footer, text="", foreground="#666666")
+        self.status = ttk.Label(footer, text="", style="Faint.TLabel")
         self.status.pack(side="left")
-        self.next_button = ttk.Button(footer, text="Next →", command=self._next)
+        self.next_button = ttk.Button(footer, text="Next →", command=self._next, style="Accent.TButton")
         self.next_button.pack(side="right")
         self.back_button = ttk.Button(footer, text="← Back", command=self._back)
         self.back_button.pack(side="right", padx=(0, 8))
-        self.save_button = ttk.Button(footer, text="Save & finish", command=self._save)
+        self.save_button = ttk.Button(footer, text="Save & finish", command=self._save, style="Accent.TButton")
         self.save_button.pack(side="right", padx=(0, 8))
 
     # -- page: discord ----------------------------------------------------
@@ -146,7 +151,7 @@ class Wizard(tk.Tk):
         self.discord_entries: Dict[str, ttk.Entry] = {}
         self.discord_status: Dict[str, ttk.Label] = {}
         for row, market in enumerate(MARKETS):
-            frame = ttk.LabelFrame(page, text=MARKET_LABEL[market], padding=10)
+            frame = ttk.LabelFrame(page, text=MARKET_LABEL[market], padding=10, style="Card.TLabelframe")
             frame.grid(row=row, column=0, sticky="ew", pady=6, padx=2)
             page.columnconfigure(0, weight=1)
             existing = env.get(WEBHOOK_KEY[market], "")
@@ -166,19 +171,19 @@ class Wizard(tk.Tk):
                 command=lambda m=market: self._test_webhook(m),
             ).grid(row=0, column=2, padx=(6, 0))
             status = ttk.Label(frame, text="✓ saved" if secrets.is_configured(existing) else "not configured",
-                               foreground="#2e7d32" if secrets.is_configured(existing) else "#a15c00")
+                               foreground=theme.ACCENT if secrets.is_configured(existing) else theme.WARN)
             status.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
             self.discord_entries[market] = entry
             self.discord_status[market] = status
 
     def _test_webhook(self, market: str) -> None:
         value = self.discord_entries[market].get().strip()
-        self.discord_status[market].configure(text="testing…", foreground="#666666")
+        self.discord_status[market].configure(text="testing…", foreground=theme.DIM)
 
         def done(result) -> None:
             self.discord_status[market].configure(
                 text=("✓ " if result.ok else "✗ ") + result.detail,
-                foreground="#2e7d32" if result.ok else "#b3261e",
+                foreground=theme.ACCENT if result.ok else theme.DANGER,
             )
 
         self._async(lambda: validators.validate_discord_webhook(value), done)
@@ -193,16 +198,16 @@ class Wizard(tk.Tk):
         for row, market in enumerate(MARKETS):
             block = providers.get(market) or (providers.get(market) or {})
             kind = block.get("type") or {"crypto": "binance", "forex": "mt5", "stock": "yahoo"}[market]
-            frame = ttk.LabelFrame(page, text="{} · {}".format(MARKET_LABEL[market], kind), padding=10)
+            frame = ttk.LabelFrame(page, text="{} · {}".format(MARKET_LABEL[market], kind), padding=10, style="Card.TLabelframe")
             frame.grid(row=row, column=0, sticky="ew", pady=5, padx=2)
             page.columnconfigure(0, weight=1)
             detail = block.get("base_url") or block.get("terminal_url") or ""
-            ttk.Label(frame, text=detail or "default endpoint", foreground="#666666").grid(row=0, column=0, sticky="w")
-            label = ttk.Label(frame, text="not tested", foreground="#666666")
+            ttk.Label(frame, text=detail or "default endpoint", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
+            label = ttk.Label(frame, text="not tested", style="Muted.TLabel")
             label.grid(row=1, column=0, sticky="w", pady=(4, 0))
             self.provider_labels[market] = label
 
-        mt5 = ttk.LabelFrame(page, text="MT5 bridge (forex, optional)", padding=10)
+        mt5 = ttk.LabelFrame(page, text="MT5 bridge (forex, optional)", padding=10, style="Card.TLabelframe")
         mt5.grid(row=3, column=0, sticky="ew", pady=5, padx=2)
         ttk.Label(mt5, text="Terminal URL").grid(row=0, column=0, sticky="w")
         self.mt5_url = ttk.Entry(mt5, width=52)
@@ -239,7 +244,7 @@ class Wizard(tk.Tk):
                     continue
                 label.configure(
                     text=("✓ " if result["ok"] else "✗ ") + result["detail"],
-                    foreground="#2e7d32" if result["ok"] else "#b3261e",
+                    foreground=theme.ACCENT if result["ok"] else theme.DANGER,
                 )
 
         self._async(work, done)
@@ -258,7 +263,7 @@ class Wizard(tk.Tk):
         for market in MARKETS:
             if market not in groups:
                 continue
-            frame = ttk.LabelFrame(page, text=MARKET_LABEL[str(market)] if market in MARKET_LABEL else market, padding=8)
+            frame = ttk.LabelFrame(page, text=MARKET_LABEL[str(market)] if market in MARKET_LABEL else market, padding=8, style="Card.TLabelframe")
             frame.grid(row=row, column=0, sticky="ew", pady=5, padx=2)
             page.columnconfigure(0, weight=1)
             for index, item in enumerate(groups[market]):
@@ -274,7 +279,7 @@ class Wizard(tk.Tk):
     # -- page: system -----------------------------------------------------
     def _build_system(self, page: ttk.Frame) -> None:
         cfg = self.context["config"]
-        frame = ttk.LabelFrame(page, text="Storage", padding=10)
+        frame = ttk.LabelFrame(page, text="Storage", padding=10, style="Card.TLabelframe")
         frame.pack(fill="x", pady=5)
         ttk.Label(frame, text="SQLite path").grid(row=0, column=0, sticky="w")
         self.db_path = ttk.Entry(frame, width=56)
@@ -282,7 +287,7 @@ class Wizard(tk.Tk):
         self.db_path.grid(row=0, column=1, sticky="ew", padx=(8, 0))
         frame.columnconfigure(1, weight=1)
 
-        web = ttk.LabelFrame(page, text="Dashboard", padding=10)
+        web = ttk.LabelFrame(page, text="Dashboard", padding=10, style="Card.TLabelframe")
         web.pack(fill="x", pady=5)
         ttk.Label(web, text="Host").grid(row=0, column=0, sticky="w")
         self.host_var = tk.StringVar(value=cfg.web.host)
@@ -299,12 +304,12 @@ class Wizard(tk.Tk):
             "The scanner and the dashboard run in one process (asta serve). "
             "Closing the browser does not stop the scanner."
         )
-        ttk.Label(page, text=note, foreground="#666666", wraplength=700, justify="left").pack(anchor="w", pady=(10, 0))
+        ttk.Label(page, text=note, style="Faint.TLabel", wraplength=700, justify="left").pack(anchor="w", pady=(10, 0))
 
     # -- page: review -----------------------------------------------------
     def _build_review(self, page: ttk.Frame) -> None:
         ttk.Button(page, text="Run validation", command=self._validate_all).pack(anchor="w")
-        self.review_text = tk.Text(page, height=14, wrap="word", relief="flat", background="#f6f6f4")
+        self.review_text = theme.text_widget(page, height=14, wrap="word")
         self.review_text.pack(fill="both", expand=True, pady=(8, 0))
         self.review_text.configure(state="disabled")
         self.start_after_var = tk.BooleanVar(value=True)
@@ -492,6 +497,8 @@ class Wizard(tk.Tk):
 
 
 def run_wizard(config_dir: Optional[str] = None, settings_mode: bool = False) -> int:
-    wizard = Wizard(config_dir=config_dir, settings_mode=settings_mode)
-    wizard.mainloop()
+    root = tk.Tk()
+    root.withdraw()
+    Wizard(root, config_dir=config_dir, settings_mode=settings_mode)
+    root.mainloop()
     return 0

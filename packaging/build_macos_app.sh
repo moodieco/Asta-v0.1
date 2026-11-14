@@ -34,6 +34,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>ASTA</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSArchitecturePriority</key>
+  <array><string>arm64</string><string>x86_64</string></array>
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.finance</string>
 </dict>
@@ -45,7 +47,23 @@ cat > "$APP/Contents/MacOS/ASTA" <<'STUB'
 # Resolve the repo root: ASTA.app/Contents/MacOS/ASTA -> ../../..
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$ROOT" || exit 1
-exec "$ROOT/.venv/bin/python" -m asta.main launcher >>"$ROOT/data/logs/launcher.log" 2>&1
+mkdir -p "$ROOT/data/logs"
+exec >>"$ROOT/data/logs/launcher.log" 2>&1
+
+PY="$ROOT/.venv/bin/python"
+if [ ! -x "$PY" ]; then
+  echo "[ASTA] venv missing at $PY"
+  exit 1
+fi
+
+# LaunchServices starts a script-only bundle in Rosetta on Apple Silicon. The venv
+# carries an arm64-only native extension (pydantic_core), which then fails to dlopen
+# with "incompatible architecture". Pin the native slice explicitly.
+echo "[ASTA] launch $(date '+%Y-%m-%d %H:%M:%S') arch=$(uname -m)"
+if [ "$(uname -m)" = "arm64" ]; then
+  exec /usr/bin/arch -arm64 "$PY" -m asta.main launcher
+fi
+exec "$PY" -m asta.main launcher
 STUB
 chmod +x "$APP/Contents/MacOS/ASTA"
 
