@@ -27,9 +27,7 @@ Time: ~15 minutes. Costs: nothing (Tailscale Personal is free).
 
 ```bash
 cd ~                      # Windows: cd %USERPROFILE%
-# feat/web-launcher is the branch that carries the dashboard + deploy tooling;
-# main is still the older pre-dashboard line.
-git clone --branch feat/web-launcher https://github.com/moodieco/Asta-V0.1.git asta
+git clone https://github.com/moodieco/Asta-V0.1.git asta
 cd asta
 python3 -m venv .venv
 .venv/bin/pip install -e .
