@@ -7,6 +7,9 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check src tests scripts
+
+# dashboard changes need the frontend checks too
+cd web && npm ci && npx tsc -p tsconfig.json --noEmit && npm run build
 ```
 
 ## Layout rules
@@ -15,8 +18,14 @@ python3 -m venv .venv
   `integrations` or `storage` implementations.
 * `services/` orchestrate; they receive collaborators, they do not construct them.
 * `bootstrap.py` is the only composition root.
-* Market-specific code stays under `markets/<market>/`.
+* **All** strategies live in `markets/strategies/`: `<name>.py` for the generic
+  implementation, `<market>_<name>.py` for the tuning subclass. Never add
+  `markets/<market>/strategies/` again — that split duplicated algorithm bodies.
+* Market-only plumbing (sessions, overnight gaps, universes) stays under
+  `markets/<market>/indicators/` and `markets/<market>/universe.py`.
 * Indicator maths shared by several markets belongs in `core/indicators/`.
+* The dashboard HTTP layer lives in `src/asta/web/`; it never imports `AstaApp` —
+  everything arrives through injected callables, which keeps it testable without an engine.
 
 ## Conventions
 

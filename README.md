@@ -1,150 +1,155 @@
-# ASTA V0.1 — AI Signal Trading Agent
+# ASTA v0.1
 
-Multi-market signal scanner (Forex, Crypto, Stock) that detects setups with modular
-scanners and pushes formatted alerts to Discord. **V0.1 detects and notifies — it never
-places orders.**
+Multi-market signal scanner for **crypto, stock and forex**: it watches candles with
+modular scanners, validates and de-duplicates what it finds, stores every signal in
+SQLite, and pushes the actionable ones to Discord. A local dashboard shows the engine,
+the scanners and the historical edge.
+
+**It detects and notifies. It never places orders and holds no exchange permissions.**
 
 ```
-providers ──► data_service ──► scanners ──► signal_manager ──► notifications
-          (candles, cached)            (validate → dedupe → store)   (Discord)
+providers ──► data service ──► scanners ──► validator ──► dedup ──► SQLite ──► Discord
+            (Binance / Yahoo / MT5)                  (entry · stop · target · R)
 ```
 
-## Status
-
-| Area | State |
-|---|---|
-| Core (contracts, registry, manager, scheduler, event bus) | done |
-| Services (data, analysis, notification) | done |
-| Providers: Binance crypto, **MT5 MCP forex**, Yahoo stock | done |
-| Scanners: 2 forex, 4 crypto, 2 stock | done |
-| Signal pipeline: validate, dedupe, entry/stop/target, outcome scoring | done |
-| Storage: SQLite history (single source of truth), 1.4k backfilled signals | done |
-| Dashboard: `asta serve` — read-only API + React UI on 127.0.0.1:4310 | done |
-| Desktop launcher: Quick Setup wizard, start/stop/restart, system status | done |
-| Discord: webhook client, embeds, per-market routing, test/sample alerts | done |
-| Config: 4 files, env expansion, dry-run, per-scanner overrides | done |
-| Tooling: CLI, 5 scripts, CI (tests + lint) | done |
-| Tests | see `pytest -q` |
-
-## Share and run 24/7
-
-| Goal | Command |
-|---|---|
-| Stable public HTTPS (no domain, free) | `./scripts/share-tailscale.sh` → `https://<machine>.<tailnet>.ts.net` |
-| Random public URL (dies on restart) | `./scripts/share.sh` (cloudflared quick tunnel) |
-| Run as a background service | `./deploy/install.sh` (macOS/Linux) · `deploy\windows\install-service.ps1` |
-
-Runbooks: [`docs/TAILSCALE.md`](docs/TAILSCALE.md) · [`deploy/README.md`](deploy/README.md) (macOS/Windows/Linux matrix).
-
-## Deploy (Render)
-
-`Dockerfile` + `render.yaml` build the dashboard and run the scanner in one
-service. Push to GitHub, then Render → **New → Blueprint**. Full checklist,
-env vars and caveats: [`docs/DEPLOY_RENDER.md`](docs/DEPLOY_RENDER.md).
-
-## Install
-
-Panduan lengkap dari nol (clone → dashboard → link HTTPS stabil):
-[`docs/INSTALL.md`](docs/INSTALL.md).
-
-## Quickstart (Bahasa Indonesia)
+## Quick start
 
 ```bash
-cd ~/Projects/asta-v0.1
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-cp .env.example .env                 # webhook Discord + ASTA_EDITOR_TOKEN/VIEWER_TOKEN
-cd web && npm ci && npm run build && cd ..   # dashboard bundle (web/dist, tidak di-commit)
-.venv/bin/asta --health              # provider, storage, webhook
-.venv/bin/asta --once --dry-run      # satu siklus, tidak kirim ke Discord
-.venv/bin/asta serve                 # scanner + dashboard (browser terbuka otomatis)
+git clone https://github.com/moodieco/Asta-V0.1.git asta && cd asta
+python3 -m venv .venv && .venv/bin/pip install -e .
+cp .env.example .env                        # Discord webhooks + dashboard tokens
+cd web && npm ci && npm run build && cd ..   # dashboard bundle (web/dist is not committed)
+.venv/bin/asta --health                     # providers, storage, webhooks
+.venv/bin/asta serve                        # scanner + dashboard on 127.0.0.1:4310
 ```
 
-Launcher desktop (tanpa terminal): buka `ASTA.app` (lihat `docs/LAUNCHER.md`), atau
-`asta launcher`. Quick Setup dijalankan sekali; setelah itu konfigurasi diubah lewat
-Settings.
+Open `http://127.0.0.1:4310/?token=<ASTA_EDITOR_TOKEN>`.
 
-## Struktur folder
+Full walkthrough, per OS, plus a stable public HTTPS link:
+**[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
-```
-config/                     app.yaml · markets.yaml · logging.yaml · discord.yaml
-docs/                       architecture, API, signal spec, scanner guide, db schema, security
-src/asta/
-  main.py                   CLI
-  bootstrap.py              composition root (satu-satunya tempat objek dirakit)
-  config.py                 loader untuk 4 file config
-  core/                     signal model, scanner base/registry/manager, scheduler,
-                            validator, manager, dedup, market manager, event bus, indicators/
-  markets/<market>/         market_config.yaml · universe.py · indicators/ · strategies/ · scanners/
-  providers/                base.py + crypto/binance/ · forex/oanda/ · stock/yahoo/
-  services/                 data_service · analysis_service · notification_service
-  integrations/discord/     client · embed_builder · router · alert_manager · channel_config
-  web/                      server · routes · queries · service   (dashboard HTTP, read-only)
-  launcher/                 app (Tk) · supervisor · wizard          (desktop launcher)
-  setup/                    state · secrets · validators · writer   (quick setup logic)
-  storage/                  database · repositories/ · models/ · signal_history · cache
-  utils/                    logger · time_utils · exceptions
-web/                        Vite + React dashboard (source + dist/)
-tests/                      unit/ (core, forex, crypto, stock, web, setup, launcher) · integration/ · e2e/ · fixtures/
-scripts/                    run_asta · test_connections · validate_config · scanner_status · inspect_market
-data/                       cache/ · history/ · logs/
-```
+## Reach it from anywhere
 
-Setiap scanner punya folder sendiri berisi `scanner.py`, `config.yaml`, dan `README.md`
-(entry conditions, parameter, kapan dia diam).
+| Goal | How | Notes |
+|---|---|---|
+| Stable public HTTPS, no domain, free | `./scripts/share-tailscale.sh` | `https://<machine>.<tailnet>.ts.net`, survives reboots |
+| Anything, quickly | `./scripts/share.sh` | cloudflared quick tunnel; the URL changes on restart |
+| Same Wi-Fi | `asta serve --host 0.0.0.0` | token required for every non-loopback request |
+| Hosted (no local machine) | `Dockerfile` + `render.yaml` | crypto + stock only (no MT5 terminal on a server) |
 
-## Scanner V0.1
+Guide: [`docs/TAILSCALE.md`](docs/TAILSCALE.md) · [`docs/DEPLOY_RENDER.md`](docs/DEPLOY_RENDER.md)
 
-| ID | Market | TF | Strategi |
+Two tokens exist and both matter: **editor** (full control) and **viewer** (read-only).
+They come from `ASTA_EDITOR_TOKEN` / `ASTA_VIEWER_TOKEN` or `data/share.json`; the
+dashboard stores them in an `HttpOnly` cookie. `/healthz` is the only unauthenticated
+path, and it returns nothing but `{"ok": true}`.
+
+## What is inside
+
+| Area | Detail |
+|---|---|
+| Scanners | 9 built-in across three markets, each a folder with `scanner.py`, `config.yaml`, `README.md` |
+| Strategies | one folder `markets/strategies/` — generic implementation + `crypto_/stock_/forex_` tuning subclasses |
+| Providers | Binance (crypto), Yahoo (stock), MT5 MCP with public-data fallback (forex) or OANDA |
+| Signal pipeline | validator → dedup window → SQLite history → Discord, with entry/stop/target and realized R |
+| Dashboard | React + Vite SPA: overview, signal history, scanner management, alerts, system monitor, dark mode |
+| Write API | install/uninstall/restore/purge scanners, enable toggles, test & sample alerts, regenerate share links |
+| Storage | SQLite (WAL, single source of truth) or JSONL, one switch in `config/app.yaml` |
+| Tests | 181 unit tests, `ruff` clean, `tsc` + Vite build in CI |
+
+### Scanners
+
+| ID | Market | TF | Setup |
 |---|---|---|---|
 | `FXS001_RSI_DIVERGENCE` | forex | 1h | regular RSI divergence |
-| `FXS002_EMA_CROSSOVER` | forex | 1h | EMA20/50 cross + EMA200 context |
-| `CXS001_RSI_DIVERGENCE` | crypto | 1h | RSI divergence + volume gate |
-| `CXS002_VOLUME_SPIKE` | crypto | 15m | 3x volume spike, directional body |
-| `CXS003_BREAKOUT_TREND` | crypto | 1h | 30-bar breakout + volume + ATR cap |
-| `CXS004_EMA_PULLBACK` | crypto | 1h | trend pullback continuation (EMA20/100 + RSI reset) |
-| `STS001_EMA_TREND` | stock | 1d | EMA cross aligned with EMA200 |
-| `STS002_BREAKOUT_TREND` | stock | 1d | 40-bar breakout + volume + gap |
+| `FXS002_EMA_CROSSOVER` | forex | 1h | EMA 20/50 cross with EMA 200 context |
+| `FXS003_ASIA_RANGE_BREAKOUT` | forex | 1h | Asia-session range break (NY hours, DST aware) |
+| `CXS001_RSI_DIVERGENCE` | crypto | 1h | divergence + volume gate |
+| `CXS002_VOLUME_SPIKE` | crypto | 15m | 3× volume spike with directional body |
+| `CXS003_BREAKOUT_TREND` | crypto | 1h | 30-bar breakout + volume + ATR extension cap |
+| `CXS004_EMA_PULLBACK` | crypto | 1h | trend pullback continuation (EMA 20/100 + RSI reset) |
+| `STS001_EMA_TREND` | stock | 1d | EMA cross aligned with EMA 200 |
+| `STS002_BREAKOUT_TREND` | stock | 1d | 40-bar breakout + volume + overnight gap |
 
-## CLI & scripts
+Writing your own: **[`docs/SCANNER_GUIDE.md`](docs/SCANNER_GUIDE.md)**.
+Uploading one: the dashboard installer is marked *coming soon* — the single-file
+contract (metadata + strategy in one `scanner.py`) is the next planned change.
+
+## CLI
 
 ```bash
 asta serve [--port 4310] [--no-browser]     # scanner + dashboard
-asta status                                  # JSON status of a running instance
-asta setup                                   # quick setup wizard
-asta launcher                                # desktop launcher window
+asta status | setup | launcher               # inspect, configure, desktop window
 
 asta --once [--dry-run] [--markets crypto] [--scanners CXS002_VOLUME_SPIKE]
 asta --list-scanners | --health | --test-alert | --sample-alert
-asta --config /path/to/config-dir
+```
 
-python scripts/validate_config.py       # static config/scanner checks
-python scripts/test_connections.py      # provider + webhook connectivity (--send to post)
-python scripts/scanner_status.py        # inventory, health, recent signals
-python scripts/inspect_market.py --market crypto --symbols BTCUSDT --timeframes 1h
-python scripts/scan_once.py             # offline demo with synthetic candles
-python scripts/signal_frequency.py --market crypto   # alerts/day per scanner (history replay)
-python scripts/migrate_history.py                    # JSONL -> SQLite, idempotent
-python scripts/backfill_history.py --market crypto --days 60 --commit   # historical replay
-python scripts/update_outcomes.py                    # score open signals (TP/SL/expiry)
+Utilities live in `scripts/`: `validate_config.py`, `test_connections.py`,
+`scanner_status.py`, `inspect_market.py`, `backfill_history.py`, `update_outcomes.py`.
+
+## Install as a service
+
+```bash
+./deploy/install.sh                                   # macOS (launchd) / Linux (systemd)
+powershell -File .\deploy\windows\install-service.ps1 # Windows (NSSM)
+./deploy/install.sh --uninstall                       # stop and remove, data/ survives
+```
+
+Same command on every OS (`asta serve --host 127.0.0.1 --port 4310 --no-browser`); only the
+supervisor differs. Matrix and rules: [`deploy/README.md`](deploy/README.md).
+
+## Project layout
+
+```
+config/        app.yaml · markets.yaml · logging.yaml · discord.yaml
+src/asta/
+  core/        signal model, scanner base/registry/manager, scheduler, validator, dedup, indicators
+  markets/     strategies/ (generic + per-market) · <market>/scanners/ · <market>/indicators/ · universe
+  providers/   binance · yahoo · mt5 · oanda
+  services/    data · analysis · notification
+  storage/     sqlite · repositories · history
+  web/         http server · routes (read + write) · queries · share tokens
+  setup/       quick-setup state and writers
+web/           React + Vite dashboard (dist/ built locally)
+deploy/        launchd · systemd · windows service templates
+docs/          install, tailscale, render, architecture, web API, scanner guide, schema
+data/          history/ · scanners/ · alerts/ · logs/   (gitignored)
 ```
 
 ## Configuration
 
-| File | Isi |
+| File | Holds |
 |---|---|
-| `config/app.yaml` | environment, scheduler, validator, storage backend, provider settings |
-| `config/markets.yaml` | market mana yang aktif, daftar symbol, override per scanner |
-| `config/logging.yaml` | level, format (text/json), rotating file, per-logger level |
-| `config/discord.yaml` | mapping market → env var webhook + label channel |
-| `config/setup_state.json` | quick-setup marker (written by the wizard, no secrets) |
+| `config/app.yaml` | environment, scheduler, validator, storage, provider settings, `web:` host/port |
+| `config/markets.yaml` | enabled markets, symbol universes, per-scanner overrides |
+| `config/logging.yaml` | level, format (text/json), rotation, per-logger levels |
+| `config/discord.yaml` | market → webhook env var, channel label |
+| `.env` | secrets only; YAML refers to them as `${VAR}` |
 
-Secrets hanya di `.env` (`${VAR}` di-expand saat load). `storage.backend: jsonl | sqlite`
-menentukan penyimpanan sinyal; dashboard membaca file SQLite yang sama secara read-only.
-Blok `web:` mengatur host/port dashboard.
+Runtime data (SQLite history, installed scanners, tokens, alert log) lives under `data/`
+and is never committed. Set `ASTA_DATA_DIR` to move it onto a volume.
 
 ## Documentation
 
-* [ARCHITECTURE](docs/ARCHITECTURE.md) · [API](docs/API_DOCUMENTATION.md) · [SIGNAL SPEC](docs/SIGNAL_SPECIFICATION.md)
-* [SCANNER GUIDE](docs/SCANNER_GUIDE.md) · [DATABASE SCHEMA](docs/DATABASE_SCHEMA.md)
-* [LAUNCHER](docs/LAUNCHER.md) · [WEB API](docs/WEB_API.md) · [SECURITY](docs/SECURITY.md)
-* [ROADMAP](docs/DEVELOPMENT_ROADMAP.md) · [CONTRIBUTING](docs/CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)
+| Doc | What |
+|---|---|
+| [INSTALL](docs/INSTALL.md) | zero → running → stable public URL |
+| [TAILSCALE](docs/TAILSCALE.md) | Funnel setup, services, troubleshooting |
+| [DEPLOY_RENDER](docs/DEPLOY_RENDER.md) | docker + blueprint deploy |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | layers and responsibilities |
+| [WEB API](docs/WEB_API.md) | every HTTP endpoint |
+| [SCANNER GUIDE](docs/SCANNER_GUIDE.md) | add a scanner + strategy |
+| [SIGNAL SPEC](docs/SIGNAL_SPECIFICATION.md) · [DB SCHEMA](docs/DATABASE_SCHEMA.md) | contracts and storage |
+| [SECURITY](docs/SECURITY.md) | secrets, tokens, exposure model |
+| [CONTRIBUTING](docs/CONTRIBUTING.md) · [AGENTS](AGENTS.md) | conventions for humans and agents |
+
+## Status
+
+Working and tested: engine, 9 scanners, SQLite history, Discord delivery, dashboard
+(read + write), share tokens, Tailscale Funnel, service units for three OSes.
+
+Next, in order: single-file scanner upload (template + strict validation), Windows
+end-to-end verification of the service scripts, and forex on Linux via OANDA.
+
+Not in scope for v0.1: order execution, position tracking, PnL accounting.

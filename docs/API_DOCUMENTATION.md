@@ -188,7 +188,7 @@ service.status()   # -> scanners, cycles, storage, web block (used by /api/healt
 service.stop()
 ```
 
-The API is read-only: every query opens its own `mode=ro` SQLite connection, so the
+Dashboard reads are read-only: every query opens its own `mode=ro` SQLite connection, so the
 scanner's writer is never blocked. Endpoints: `/api/health`, `/api/meta`, `/api/facets`,
 `/api/config`, `/api/signals` (filters: `status`, `scanner`, `market`, `timeframe`, `q`,
 `sort`, `limit`, `offset`), `/api/signals/<id|signal_id>`. See `docs/WEB_API.md`.

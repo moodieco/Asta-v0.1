@@ -9,10 +9,22 @@ permissions and executes no orders.
 |---|---|---|
 | `DISCORD_WEBHOOK_*` | `.env` only | treated as credentials: anyone with the URL can post |
 | `OANDA_API_TOKEN` | `.env` only | practice token is enough for V0.1 |
+| `ASTA_EDITOR_TOKEN` | `.env` or `data/share.json` | full control of the dashboard |
+| `ASTA_VIEWER_TOKEN` | `.env` or `data/share.json` | read-only dashboard access |
 
 * `.env` is gitignored and created with `0600` permissions (the Quick Setup wizard enforces it).
-* The dashboard API is unauthenticated and binds `127.0.0.1` only - never set `web.host: 0.0.0.0`
-  on a shared network.
+* The dashboard is authenticated. Loopback requests are editors; every other request
+  (LAN, tunnel, proxy) must present an editor or viewer token in `?token=`,
+  `X-ASTA-Token` or the `asta_share` cookie. Writes answer 403 for viewers.
+* Proxy detection matters: a tunnel relays over loopback, so `X-Forwarded-*`/`Cf-*`
+  headers downgrade the request to "remote" and force the token check. A request that
+  arrives through a tunnel without a token must get 401; there is a regression test for it.
+* `GET /healthz` is the only unauthenticated path, and it exposes nothing but
+  `{"ok": true}` (hosting platforms cannot carry a share token).
+* If you expose the dashboard, share the **viewer** token. The editor token is full
+  control: scanner install/uninstall, enable toggles, token regeneration.
+* Set the tokens in `.env` (stable across restarts) rather than letting ASTA generate
+  them into `data/share.json`. Rotating them = change the env vars and restart.
 * YAML only references secrets as `${VAR}`; the loader expands them in memory.
 * Logs never print full webhook URLs: `ChannelConfig.masked()` and health output show
   `https://...abcd` only.

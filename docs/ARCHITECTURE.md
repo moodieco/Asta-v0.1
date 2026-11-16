@@ -22,10 +22,14 @@
 │                    Scheduler, SignalValidator/Manager, Dedup,      │
 │                    MarketManager, EventBus, indicators/            │
 ├──────────────────────────────────────────────────────────────────┤
-│ markets/<market>/  scanners/, strategies/, indicators/, universe   │
+│ markets/           strategies/ (generic + per-market), <market>/    │
+│                    scanners/ · indicators/ · universe               │
 │ providers/         binance/ · oanda/ · yahoo/ (client + candles)   │
 │ integrations/      discord/ (client, embeds, router, alerts)       │
 │ storage/           database · repositories · models · history      │
+│ web/               http server · routes (read + write) · queries ·  │
+│                    share tokens · dashboard SPA from web/dist      │
+│ deploy/            launchd · systemd · NSSM templates              │
 │ utils/             logger · time_utils · exceptions                │
 └──────────────────────────────────────────────────────────────────┘
 ```
