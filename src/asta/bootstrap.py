@@ -113,7 +113,7 @@ class AstaApp:
         )
 
         registry = self.registry or ScannerRegistry()
-        if not registry.classes:
+        if self.registry is None:
             registry.discover()
         user_root = self.config.resolve_path("data/scanners")
         registry.discover_user_scanners(user_root)

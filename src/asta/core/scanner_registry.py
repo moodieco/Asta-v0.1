@@ -108,13 +108,17 @@ class ScannerRegistry:
                 if not module_info.name.endswith(".scanner"):
                     continue
                 try:
-                    importlib.import_module(module_info.name)
+                    module = importlib.import_module(module_info.name)
                 except Exception as exc:  # noqa: BLE001 - a broken scanner must not kill startup
                     logger.error(
                         "failed to import scanner module",
                         extra={"module": module_info.name, "error": str(exc)},
                     )
                     continue
+                # A module already in sys.modules is not re-executed, so its
+                # decorator never runs again. Re-register its scanner classes so
+                # discovery stays idempotent within one process.
+                self._reregister(module)
                 imported.append(module_info.name)
             self._discovered_packages.append(package_name)
         self._classes = dict(SCANNER_CLASSES)
@@ -123,6 +127,18 @@ class ScannerRegistry:
             extra={"modules": len(imported), "scanners": len(self._classes)},
         )
         return imported
+
+    @staticmethod
+    def _reregister(module) -> None:
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and issubclass(value, ScannerBase)
+                and value.__module__ == module.__name__
+                and getattr(value, "id", "")
+                and getattr(value, "market", None) is not None
+            ):
+                SCANNER_CLASSES.setdefault(value.id, value)
 
     # -- configs ----------------------------------------------------------
     @staticmethod

@@ -16,6 +16,7 @@ EXPECTED_IDS = {
     "CXS002_VOLUME_SPIKE",
     "CXS003_BREAKOUT_TREND",
     "CXS004_EMA_PULLBACK",
+    "FXS003_ASIA_RANGE_BREAKOUT",
     "STS001_EMA_TREND",
     "STS002_BREAKOUT_TREND",
 }
@@ -23,6 +24,28 @@ EXPECTED_IDS = {
 
 def test_discovery_registers_every_scanner(scanner_registry):
     assert EXPECTED_IDS.issubset(set(scanner_registry.ids()))
+
+
+def test_second_discovery_restores_scanners_from_cached_modules(monkeypatch):
+    """Discovery must be idempotent inside one process.
+
+    A module already in ``sys.modules`` is not re-executed, so its
+    ``@register_scanner`` decorator never runs again. If another component left a
+    partial global registry behind (a stub class, a cleared dict), a second
+    discovery used to register nothing and every real scanner silently vanished.
+    """
+    from asta.core import scanner_registry as sr
+
+    first = sr.ScannerRegistry()
+    first.discover()
+    assert "CXS003_BREAKOUT_TREND" in first.ids()
+
+    stub = first.get_class("CXS003_BREAKOUT_TREND")
+    monkeypatch.setattr(sr, "SCANNER_CLASSES", {"CXS777_ENGINE": stub})
+
+    second = sr.ScannerRegistry()
+    second.discover()
+    assert "CXS003_BREAKOUT_TREND" in second.ids()
 
 
 def test_each_scanner_has_a_config_file(scanner_registry):
