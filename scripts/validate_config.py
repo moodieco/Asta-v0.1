@@ -94,13 +94,19 @@ def main() -> int:
             warn("market {} missing from markets.yaml".format(market.value))
             continue
         if enabled.enabled:
-            provider_key = PROVIDER_FOR_MARKET.get(market.value)
-            if provider_key not in config.providers:
+            # Two accepted shapes: market-keyed (providers.crypto.type: binance)
+            # and the legacy flat one (providers.binance). Accept both so a valid
+            # config never fails this check.
+            legacy_key = PROVIDER_FOR_MARKET.get(market.value)
+            block = config.providers.get(market.value)
+            if block is None and legacy_key not in config.providers:
                 error(
-                    "enabled market {} has no provider block ({})".format(
-                        market.value, provider_key
+                    "enabled market {} has no provider block (providers.{} or providers.{})".format(
+                        market.value, market.value, legacy_key
                     )
                 )
+            elif isinstance(block, dict) and not block.get("type"):
+                error("providers.{} has no type".format(market.value))
             webhook_env = config.webhook_env(market.value)
             if not os.getenv(webhook_env, "").strip():
                 warn("{}: {} is empty -> alerts cannot be delivered".format(market.value, webhook_env))
@@ -108,7 +114,12 @@ def main() -> int:
     print("config dir : {}".format(config.config_dir))
     print("scanners   : {}".format(len(classes)))
     print("markets    : {}".format(", ".join(sorted(config.markets)) or "<none>"))
-    print("storage    : {} -> {}".format(config.storage.backend, config.storage.signal_history_path))
+    storage_path = (
+        config.storage.sqlite_path
+        if config.storage.backend == "sqlite"
+        else config.storage.signal_history_path
+    )
+    print("storage    : {} -> {}".format(config.storage.backend, storage_path))
     print("warnings   : {}".format(len(WARNINGS)))
     for message in WARNINGS:
         print("  - {}".format(message))
