@@ -144,6 +144,10 @@ and is never committed. Set `ASTA_DATA_DIR` to move it onto a volume.
 | [SECURITY](docs/SECURITY.md) | secrets, tokens, exposure model |
 | [CONTRIBUTING](docs/CONTRIBUTING.md) · [AGENTS](AGENTS.md) | conventions for humans and agents |
 
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, ship it; no warranty.
+
 ## Status
 
 Working and tested: engine, 9 scanners, SQLite history, Discord delivery, dashboard
