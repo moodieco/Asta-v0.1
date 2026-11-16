@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import resource
+import sys
 import threading
 import time
 import urllib.error
@@ -18,10 +18,21 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from asta.core.signal_model import Market
 from asta.setup import secrets
 from asta.setup.state import SetupState
+from asta.setup.writer import set_scanner_enabled
+from asta.utils.exceptions import ConfigurationError
 from asta.utils.logger import get_logger
+from asta.web.alert_log import AlertLog
+from asta.web.scanner_library import ScannerLibrary
+
+try:  # POSIX only: Windows has no `resource` module at all.
+    import resource
+except ImportError:  # pragma: no cover - exercised on Windows
+    resource = None  # type: ignore[assignment]
 from asta.web.server import DashboardServer
+from asta.web.share import ShareManager
 
 logger = get_logger("asta.web.service")
 
@@ -51,16 +62,31 @@ class WebService:
         self.open_browser = open_browser
         self.root = Path(project_root).resolve()
         self.started_at = time.time()
-        self._cpu_mark: Dict[str, float] = {"t": time.time(), "cpu": self._process_cpu_seconds()}
+        self._cpu_mark: Dict[str, Optional[float]] = {
+            "t": time.time(),
+            "cpu": self._process_cpu_seconds(),
+        }
+        self.library = ScannerLibrary(config.resolve_path("data/scanners"))
+        self.alert_log = AlertLog(config.resolve_path("data/alerts/delivery_log.jsonl"))
+        self.share = ShareManager(config.resolve_path("data/share.json"))
         self.server = DashboardServer(
             db_path=config.resolve_path(config.storage.sqlite_path),
             web_dir=self.web_dir,
             host=self.host,
             port=self.port,
+            bind=getattr(web_cfg, "bind", None) or self.host,
             status_provider=self.status,
             config_summary=self.config_summary,
             setup_summary=self.setup_summary,
             system_snapshot=self.system_snapshot,
+            scanner_library=self.library,
+            alert_log=self.alert_log,
+            share_manager=self.share,
+            test_alert_provider=self._test_alert,
+            sample_alert_provider=self._sample_alert,
+            set_enabled_provider=self._set_enabled,
+            share_provider=lambda: self.share.info(self.host, self.port),
+            regenerate_share_provider=self.share.regenerate,
         )
 
     # -- lifecycle --------------------------------------------------------
@@ -245,9 +271,62 @@ class WebService:
         except Exception:  # noqa: BLE001 - the UI must render without the engine
             return []
 
+    # -- write operations (upload / delete / notify / share) --------------
+    def _test_alert(self, market: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Send labelled connectivity tests and record each outcome."""
+        results = self.app.send_test_alerts()
+        if market:
+            results = [r for r in results if r.get("market") == market]
+            if not results:
+                results = [
+                    {"market": market, "ok": False, "error": "webhook not configured for this market"}
+                ]
+        for result in results:
+            self.alert_log.append({"kind": "test", **result})
+        return results
+
+    def _sample_alert(self, market: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Send a labelled sample signal card and record each outcome."""
+        app = self.app
+        app.require_built()
+        notifications = app.notifications
+        data_service = app.data_service
+        if market:
+            try:
+                markets = [Market(market)]
+            except ValueError as exc:
+                raise ConfigurationError("unknown market {!r}".format(market)) from exc
+        else:
+            markets = [m for m in Market if data_service.is_enabled(m)]
+        results = notifications.send_sample_alerts(data_service.symbols, markets=markets)
+        if market and not results:
+            results = [
+                {"market": market, "ok": False, "error": "webhook not configured for this market"}
+            ]
+        for result in results:
+            self.alert_log.append({"kind": "sample", **result})
+        return results
+
+    def _set_enabled(self, scanner_id: str, enabled: bool) -> Dict[str, Any]:
+        """Persist enable/disable. User scanners -> their config.yaml; built-ins -> markets.yaml."""
+        user = self.library.find_installed(scanner_id)
+        if user is not None:
+            self.library.set_enabled(scanner_id, enabled)
+        else:
+            markets_yaml = self.root / "config" / "markets.yaml"
+            set_scanner_enabled(markets_yaml, scanner_id, enabled).write()
+        return {"enabled": bool(enabled), "restartRequired": True}
+
     # -- system snapshot --------------------------------------------------
     @staticmethod
-    def _process_cpu_seconds() -> float:
+    def _process_cpu_seconds() -> Optional[float]:
+        """Cumulative CPU seconds, or None where the OS cannot report it.
+
+        Windows has no ``resource`` module, so the dashboard degrades to
+        "unknown" instead of failing to start.
+        """
+        if resource is None:
+            return None
         usage = resource.getrusage(resource.RUSAGE_SELF)
         return float(usage.ru_utime + usage.ru_stime)
 
@@ -256,19 +335,24 @@ class WebService:
         now = time.time()
         cpu = self._process_cpu_seconds()
         previous = self._cpu_mark
-        elapsed = max(1e-6, now - previous["t"])
-        pct = ((cpu - previous["cpu"]) / elapsed) * 100.0
+        elapsed = max(1e-6, now - float(previous["t"] or now))
+        before = previous.get("cpu")
         self._cpu_mark = {"t": now, "cpu": cpu}
+        if cpu is None or before is None:
+            return None
+        pct = ((cpu - before) / elapsed) * 100.0
         if pct < 0 or pct > 100 * max(1, os.cpu_count() or 1):
             return None
         return round(pct, 1)
 
     @staticmethod
     def _rss_bytes() -> Optional[int]:
+        if resource is None:
+            return None
         usage = resource.getrusage(resource.RUSAGE_SELF)
         raw = float(usage.ru_maxrss)
-        # macOS reports bytes, Linux kilobytes.
-        return int(raw if raw > 10_000_000 or os.uname().sysname == "Darwin" else raw * 1024)
+        # macOS reports bytes, Linux kilobytes (os.uname() is POSIX-only too).
+        return int(raw if raw > 10_000_000 or sys.platform == "darwin" else raw * 1024)
 
     def _log_snapshot(self) -> Dict[str, Any]:
         logs_dir = self.root / "data" / "logs"

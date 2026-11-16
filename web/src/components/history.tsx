@@ -286,7 +286,7 @@ export function SignalDrawer({ signal, onClose }: { signal: Signal | null; onClo
   const closed = isClosed(s)
   return createPortal(
     <div className="fixed inset-0 z-[95] flex justify-end">
-      <div className="absolute inset-0 bg-[#101828]/30 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-ink/20 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <aside className="relative flex h-full w-full max-w-[470px] animate-rise flex-col border-l border-line bg-surface shadow-[var(--shadow-pop)]">
         <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>

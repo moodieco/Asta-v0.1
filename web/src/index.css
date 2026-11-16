@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Theme switch: `data-theme="dark"` on <html>. Light stays the default. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /*
  * ASTA — light, pastel, minimalist SaaS.
  * White + light grey ground, soft pastel accents, rounded cards, soft shadows.
@@ -63,6 +66,62 @@
   }
 }
 
+/* Dark palette. Same token names, so no component needs a dark: variant. */
+:root[data-theme="dark"] {
+  --color-bg: #0a0e14;
+  --color-bg-deep: #070a0f;
+  --color-surface: #121821;
+  --color-surface-2: #171f2a;
+  --color-surface-3: #1e2734;
+  --color-line: #26313f;
+  --color-line-soft: #1c2531;
+
+  --color-ink: #e9eef7;
+  --color-dim: #a9b6c7;
+  --color-faint: #71808f;
+
+  --color-up: #34d399;
+  --color-up-soft: #0f2f28;
+  --color-down: #ff7186;
+  --color-down-soft: #3a1620;
+  --color-warn: #e5b455;
+  --color-warn-soft: #33280f;
+  --color-info: #7aa2ff;
+  --color-info-soft: #17233c;
+  --color-mint: #35c8b8;
+  --color-mint-soft: #0f2f2d;
+  --color-pink: #f472b6;
+  --color-pink-soft: #361a2a;
+  --color-violet: #a78bfa;
+  --color-violet-soft: #241f3d;
+  --color-slate-soft: #1e2734;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -20px rgba(0, 0, 0, 0.8);
+  --shadow-pop: 0 18px 48px -20px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-pastel: 0 10px 30px -18px rgba(47, 111, 237, 0.55);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] body {
+  background-image:
+    radial-gradient(760px 380px at 6% -8%, rgba(47, 111, 237, 0.18), transparent 62%),
+    radial-gradient(640px 360px at 96% 0%, rgba(16, 169, 154, 0.13), transparent 60%),
+    radial-gradient(560px 380px at 70% 104%, rgba(244, 114, 182, 0.1), transparent 60%);
+}
+
+:root[data-theme="dark"] ::selection {
+  background: rgba(122, 162, 255, 0.28);
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #2b3746;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #3a485a;
+}
+
 @layer base {
   * {
     border-color: var(--color-line);
@@ -123,6 +182,10 @@
 
 @utility hairline-top {
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="dark"] .hairline-top {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
 @utility panel-scroll {

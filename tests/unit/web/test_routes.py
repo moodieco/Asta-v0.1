@@ -12,6 +12,7 @@ import pytest
 from asta.storage.database import Database
 from asta.web.queries import SignalQueries
 from asta.web.routes import Routes
+from asta.web.scanner_library import ScannerLibrary
 from asta.web.server import DashboardServer
 
 ROWS = [
@@ -151,3 +152,79 @@ def test_server_serves_spa_and_api(db_path: Path, tmp_path: Path) -> None:
             assert "id='root'" in response.read().decode()
     finally:
         server.stop()
+
+
+SOURCE = (
+    "from asta.core.scanner_base import ScannerBase\n"
+    "from asta.core.scanner_registry import register_scanner\n"
+    "from asta.core.signal_model import Market\n\n"
+    "@register_scanner\n"
+    "class Demo(ScannerBase):\n"
+    "    id = 'CXS099_DEMO'\n"
+    "    name = 'Demo'\n"
+    "    market = Market.CRYPTO\n"
+    "    def evaluate(self, context):\n"
+    "        return []\n"
+)
+
+
+def test_write_endpoints_install_uninstall_restore(db_path: Path, tmp_path: Path) -> None:
+    library = ScannerLibrary(tmp_path / "scanners")
+    routes = Routes(SignalQueries(db_path), scanner_library=library)
+
+    status, payload = routes.dispatch(
+        "/api/scanners/install",
+        method="POST",
+        body={"name": "Demo", "market": "crypto", "version": "0.1.0", "source": SOURCE, "sourceName": "scanner.py"},
+    )
+    assert status == 200 and payload["installed"] is True
+    scanner_id = payload["record"]["scannerId"]
+
+    status, payload = routes.dispatch("/api/scanners/library")
+    assert status == 200 and payload["available"] is True
+    assert payload["installed"][0]["scannerId"] == scanner_id
+    assert payload["trash"] == []
+
+    status, payload = routes.dispatch("/api/scanners/{}/uninstall".format(scanner_id), method="POST", body={})
+    assert status == 200 and payload["uninstalled"] is True
+
+    status, payload = routes.dispatch("/api/scanners/library")
+    assert payload["trash"][0]["scannerId"] == scanner_id
+
+    status, payload = routes.dispatch("/api/scanners/{}/restore".format(scanner_id), method="POST", body={})
+    assert status == 200 and payload["restored"] is True
+
+
+def test_write_endpoints_reject_bad_payload(db_path: Path, tmp_path: Path) -> None:
+    library = ScannerLibrary(tmp_path / "scanners")
+    routes = Routes(SignalQueries(db_path), scanner_library=library)
+    status, payload = routes.dispatch(
+        "/api/scanners/install", method="POST", body={"name": "X", "market": "crypto", "version": "no", "source": ""}
+    )
+    assert status == 400
+    assert "error" in payload
+
+
+def test_viewer_access_is_read_only(db_path: Path, tmp_path: Path) -> None:
+    library = ScannerLibrary(tmp_path / "scanners")
+    routes = Routes(SignalQueries(db_path), scanner_library=library)
+    status, payload = routes.dispatch(
+        "/api/scanners/install",
+        method="POST",
+        body={"name": "X", "market": "crypto", "version": "0.1.0", "source": SOURCE, "sourceName": "scanner.py"},
+        access="viewer",
+    )
+    assert status == 403
+    assert "view-only" in payload["error"]
+
+    # reads still work for a viewer
+    status, payload = routes.dispatch("/api/meta", access="viewer")
+    assert status == 200
+
+
+def test_optional_write_providers_answer_unavailable(db_path: Path) -> None:
+    routes = Routes(SignalQueries(db_path))
+    assert routes.dispatch("/api/scanners/library") == (200, {"available": False, "installed": [], "trash": [], "history": []})
+    assert routes.dispatch("/api/share") == (200, {"enabled": False})
+    status, payload = routes.dispatch("/api/scanners/install", method="POST", body={})
+    assert status == 503

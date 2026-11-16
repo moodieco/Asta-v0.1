@@ -159,10 +159,10 @@ type ButtonSize = "sm" | "md"
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary:
-    "border border-transparent bg-info text-white shadow-[var(--shadow-pastel)] hover:bg-[#255fd6] active:bg-[#1f54c4]",
-  secondary: "border border-line bg-surface text-dim hover:border-[#cfd8e4] hover:text-ink",
+    "border border-transparent bg-info text-white shadow-[var(--shadow-pastel)] hover:bg-info/90 active:bg-info/80",
+  secondary: "border border-line bg-surface text-dim hover:border-info/30 hover:text-ink",
   ghost: "border border-transparent text-dim hover:bg-surface-3 hover:text-ink",
-  danger: "border border-down/20 bg-down-soft text-down hover:bg-[#fbd5db]",
+  danger: "border border-down/20 bg-down-soft text-down hover:bg-down/15",
   subtle: "border border-line bg-surface-3 text-dim hover:bg-line-soft hover:text-ink",
 }
 
@@ -242,7 +242,7 @@ export function Switch({
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-[18px] w-[32px] shrink-0 cursor-pointer items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-        checked ? "border-up/30 bg-up" : "border-line bg-[#dfe5ec]",
+        checked ? "border-up/30 bg-up" : "border-line bg-surface-3",
       )}
     >
       <span
@@ -260,7 +260,7 @@ export function Switch({
  * ================================================================== */
 
 const fieldShell =
-  "w-full rounded-lg border border-line bg-surface text-[12px] text-ink placeholder:text-faint transition-colors hover:border-[#d5dde8] focus:border-info/50 focus:outline-none focus:ring-2 focus:ring-info/10 disabled:bg-surface-3 disabled:text-faint"
+  "w-full rounded-lg border border-line bg-surface text-[12px] text-ink placeholder:text-faint transition-colors hover:border-info/40 focus:border-info/50 focus:outline-none focus:ring-2 focus:ring-info/10 disabled:bg-surface-3 disabled:text-faint"
 
 export function Input({
   className,
@@ -469,13 +469,13 @@ export function Meter({
   className?: string
 }) {
   return (
-    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-[#eef1f6]", className)}>
+    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-surface-3", className)}>
       <div
         className={cn(
           "h-full rounded-full transition-all",
           tone === "up" && "bg-up",
           tone === "down" && "bg-down",
-          tone === "neutral" && "bg-[#b7c2d0]",
+          tone === "neutral" && "bg-faint",
           tone === "info" && "bg-info",
           tone === "warn" && "bg-warn",
         )}
@@ -487,7 +487,7 @@ export function Meter({
 
 export function Progress({ pct, className }: { pct: number; className?: string }) {
   return (
-    <div className={cn("h-2 w-full overflow-hidden rounded-full bg-[#eef1f6]", className)}>
+    <div className={cn("h-2 w-full overflow-hidden rounded-full bg-surface-3", className)}>
       <div
         className="h-full rounded-full bg-gradient-to-r from-info via-[#5b93f5] to-mint transition-[width] duration-300"
         style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
@@ -563,7 +563,7 @@ export function EmptyState({
 }
 
 export function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return <div style={style} className={cn("animate-pulse rounded-md bg-[#eef1f6]", className)} />
+  return <div style={style} className={cn("animate-pulse rounded-md bg-surface-3", className)} />
 }
 
 export function SkeletonRows({ rows = 5, className }: { rows?: number; className?: string }) {

@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -28,8 +28,7 @@ import {
 import { fmtBytes, fmtDuration, type AppData } from "@/lib/api"
 import { usePreview, alertStats } from "@/lib/preview"
 import { buildScannerRows, marketMeta } from "@/lib/scanners"
-import type { Range } from "@/lib/range"
-import { withinRange } from "@/lib/range"
+import { withinRange, type CustomRange, type Range } from "@/lib/range"
 import {
   Badge,
   Card,
@@ -39,11 +38,13 @@ import {
   Meter,
   PreviewChip,
   SectionLabel,
+  Select,
   StatusDot,
   StatusPill,
 } from "@/components/ui"
 import { CHART, Donut, EquityChart, MiniBars } from "@/components/charts"
 import { PageHeader } from "@/components/layout"
+import { RangePicker } from "@/components/range-picker"
 
 const TINTS = {
   blue: { chip: "bg-info-soft text-info", card: "from-info-soft/70" },
@@ -141,17 +142,40 @@ export function OverviewPage({
   data,
   range,
   onRange,
+  custom,
+  onCustom,
   dataset,
 }: {
   data: AppData
   range: Range
   onRange: (range: Range) => void
+  custom: CustomRange | null
+  onCustom: (custom: CustomRange | null) => void
   dataset: Dataset | null
 }) {
   const preview = usePreview()
+  const [marketFilter, setMarketFilter] = useState("all")
+  const [scannerFilter, setScannerFilter] = useState("all")
+
+  const filterOptions = useMemo(() => {
+    const markets = new Set<string>()
+    const names = new Set<string>()
+    for (const signal of dataset?.signals ?? []) {
+      markets.add(signal.market)
+      names.add(signal.scanner)
+    }
+    return { markets: [...markets].sort(), scanners: [...names].sort() }
+  }, [dataset])
+
   const signals = useMemo(
-    () => (dataset?.signals ?? []).filter((s) => withinRange(s, range)),
-    [dataset, range],
+    () =>
+      (dataset?.signals ?? []).filter(
+        (s) =>
+          withinRange(s, range, custom) &&
+          (marketFilter === "all" || s.market === marketFilter) &&
+          (scannerFilter === "all" || s.scanner === scannerFilter),
+      ),
+    [dataset, range, custom, marketFilter, scannerFilter],
   )
   const stats = useMemo(() => statsOf(signals), [signals])
   const curve = useMemo(() => equityCurve(signals), [signals])
@@ -230,19 +254,29 @@ export function OverviewPage({
         description="One screen for the engine, the scanners and the edge — every number comes from the local signal database."
         badge={<StatusPill status={engineStatus} label={engineLabel} />}
         actions={
-          <div className="inline-flex items-center gap-0.5 rounded-lg border border-line bg-surface-3 p-0.5">
-            {(["all", "90d", "30d"] as Range[]).map((option) => (
-              <button
-                key={option}
-                onClick={() => onRange(option)}
-                className={cn(
-                  "cursor-pointer rounded-[6px] px-2.5 py-1 text-[11.5px] font-medium transition-all",
-                  range === option ? "bg-surface text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)]" : "text-faint hover:text-dim",
-                )}
-              >
-                {option === "all" ? "All time" : option}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <RangePicker range={range} custom={custom} onRange={onRange} onCustom={onCustom} />
+            <Select
+              label="Market"
+              value={marketFilter}
+              onChange={setMarketFilter}
+              options={[
+                { value: "all", label: "All markets" },
+                ...filterOptions.markets.map((market) => ({
+                  value: market,
+                  label: marketMeta(market).label,
+                })),
+              ]}
+            />
+            <Select
+              label="Scanner"
+              value={scannerFilter}
+              onChange={setScannerFilter}
+              options={[
+                { value: "all", label: "All scanners" },
+                ...filterOptions.scanners.map((name) => ({ value: name, label: name })),
+              ]}
+            />
           </div>
         }
       />
@@ -487,7 +521,7 @@ export function OverviewPage({
                           <span className="truncate text-[11.5px] font-medium text-ink">{scanner.name}</span>
                           <Badge tone={marketMeta(scanner.market).tone}>{marketMeta(scanner.market).label}</Badge>
                         </div>
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#eef1f6]">
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
                           <div
                             className="h-full rounded-full bg-info/70"
                             style={{ width: `${(scanner.totalSignals / max) * 100}%` }}

@@ -2,6 +2,23 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { EMPTY_META, type Dataset, type Meta, type Signal } from "@/lib/metrics"
 
 /* ------------------------------------------------------------------ *
+ * Share token + access level
+ * ------------------------------------------------------------------ */
+
+const TOKEN =
+  typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("token") ?? ""
+    : ""
+
+export type AccessLevel = "editor" | "viewer"
+
+export function authHeaders(extra?: HeadersInit): HeadersInit {
+  const base: HeadersInit = { Accept: "application/json" }
+  if (TOKEN) (base as Record<string, string>)["X-ASTA-Token"] = TOKEN
+  return { ...base, ...(extra ?? {}) }
+}
+
+/* ------------------------------------------------------------------ *
  * Shapes returned by the ASTA dashboard API (all read-only).
  * ------------------------------------------------------------------ */
 
@@ -127,7 +144,7 @@ export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(path, {
       ...init,
-      headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+      headers: authHeaders(init?.headers),
     })
   } catch (error) {
     throw new ApiError(
@@ -136,6 +153,32 @@ export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     throw new ApiError(`GET ${path} → ${response.status} ${response.statusText}`, response.status)
+  }
+  return (await response.json()) as T
+}
+
+export async function apiSend<T>(path: string, method: "POST" | "DELETE" = "POST", body?: unknown): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(path, {
+      method,
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch (error) {
+    throw new ApiError(
+      `Cannot reach the ASTA engine (${path}). ${error instanceof Error ? error.message : ""}`.trim(),
+    )
+  }
+  if (!response.ok) {
+    let detail: string = response.statusText
+    try {
+      const parsed = (await response.json()) as { error?: string; detail?: string }
+      detail = parsed.error ?? parsed.detail ?? detail
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ApiError(`${method} ${path} → ${response.status} ${detail}`, response.status)
   }
   return (await response.json()) as T
 }

@@ -48,7 +48,9 @@ def test_setup_context_masks_secrets(project: Path) -> None:
     assert "discord.com" not in crypto["masked"]
     assert crypto["masked"].endswith("ijkl")
     assert context["webhooks"]["forex"]["configured"] is False
-    assert len(context["scanners"]) == 8
+    # one entry per built-in scanner package; keep this in sync when adding one
+    assert len(context["scanners"]) == 9
+    assert "FXS003_ASIA_RANGE_BREAKOUT" in {scanner["id"] for scanner in context["scanners"]}
     assert context["system"]["port"] == 4310
 
 

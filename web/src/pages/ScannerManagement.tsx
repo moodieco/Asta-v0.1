@@ -1,16 +1,9 @@
 import { useMemo, useState } from "react"
-import {
-  ArrowUpCircle,
-  Boxes,
-  Eye,
-  RotateCw,
-  SlidersHorizontal,
-  Trash2,
-} from "lucide-react"
+import { Boxes, Eye, Recycle, SlidersHorizontal, Trash2, UploadCloud } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { fmtInt, fmtR, relTime } from "@/lib/format"
-import type { AppData } from "@/lib/api"
-import { usePreview, previewActions } from "@/lib/preview"
+import type { AppData, ConfigScanner } from "@/lib/api"
+import { libraryActions, useLibrary, type LibraryInfo } from "@/lib/library"
 import { buildScannerRows, marketMeta, type ScannerRow } from "@/lib/scanners"
 import {
   Badge,
@@ -30,12 +23,6 @@ import {
 import { ConfirmDialog, useToast } from "@/components/feedback"
 import { PageHeader, Notice } from "@/components/layout"
 
-type Pending =
-  | { kind: "restart"; row: ScannerRow }
-  | { kind: "update"; row: ScannerRow }
-  | { kind: "uninstall"; row: ScannerRow }
-  | null
-
 export function ScannerManagementPage({
   data,
   navigate,
@@ -43,25 +30,18 @@ export function ScannerManagementPage({
   data: AppData
   navigate: (path: string) => void
 }) {
-  const preview = usePreview()
   const toast = useToast()
+  const { library, refresh: refreshLibrary } = useLibrary()
   const [query, setQuery] = useState("")
   const [market, setMarket] = useState("all")
   const [status, setStatus] = useState("all")
-  const [pending, setPending] = useState<Pending>(null)
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({})
+  const [pending, setPending] = useState<ScannerRow | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const rows = useMemo(
-    () =>
-      buildScannerRows({
-        scanners: data.setup?.scanners ?? data.config?.scanners ?? [],
-        setup: data.setup,
-        system: data.system,
-        signals: data.dataset?.signals ?? [],
-        overrides: preview.enabledOverrides,
-      }),
-    [data.setup, data.config, data.system, data.dataset, preview.enabledOverrides],
-  )
+  const rows = useMemo(() => buildScannerRows({ ...buildRowsInput(data, library, overrides) }), [data, library, overrides])
+
+  const userIds = useMemo(() => new Set(library.installed.map((r) => r.scannerId)), [library.installed])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -81,42 +61,57 @@ export function ScannerManagementPage({
 
   const loading = data.loading && !data.dataset
 
-  const toggle = (row: ScannerRow, next: boolean) => {
-    previewActions.setScannerEnabled(row.id, next)
-    toast.push({
-      tone: next ? "success" : "info",
-      title: `${row.name} ${next ? "enabled" : "disabled"}`,
-      description: "Recorded in the preview layer — the running engine is untouched.",
-    })
+  const toggle = async (row: ScannerRow, next: boolean) => {
+    setOverrides((current) => ({ ...current, [row.id]: next }))
+    try {
+      await libraryActions.setEnabled(row.id, next)
+      refreshLibrary()
+      toast.success(`${row.name} ${next ? "enabled" : "disabled"}`, "Persisted — restart the engine to apply.")
+    } catch (error) {
+      setOverrides((current) => ({ ...current, [row.id]: !next }))
+      toast.error("Could not update scanner", error instanceof Error ? error.message : String(error))
+    }
   }
 
-  const runPending = () => {
+  const runUninstall = async () => {
     if (!pending) return
     setBusy(true)
-    const { kind, row } = pending
-    window.setTimeout(() => {
-      if (kind === "uninstall") {
-        previewActions.setScannerEnabled(row.id, false)
-        toast.success(`${row.name} uninstalled`, "Files stay on disk — preview only.")
-      } else if (kind === "restart") {
-        toast.success(`${row.name} restart requested`, "The engine restarts it on the next cycle.")
+    const row = pending
+    const isUser = userIds.has(row.id)
+    try {
+      if (isUser) {
+        await libraryActions.uninstall(row.id)
+        refreshLibrary()
+        toast.success(`${row.name} moved to the recycle bin`, "Restore it any time from the Recycle bin.")
       } else {
-        toast.info(`${row.name} is up to date`, `Version ${row.version} is the newest available.`)
+        await libraryActions.setEnabled(row.id, false)
+        setOverrides((current) => ({ ...current, [row.id]: false }))
+        refreshLibrary()
+        toast.info(`${row.name} disabled`, "Built-in scanners can't be deleted — this disables it. Restart to apply.")
       }
+    } catch (error) {
+      toast.error("Uninstall failed", error instanceof Error ? error.message : String(error))
+    } finally {
       setBusy(false)
       setPending(null)
-    }, 700)
+    }
   }
 
   return (
     <div className="animate-rise">
       <PageHeader
         title="Scanner management"
-        description="Every discovered scanner, its market coverage and what it has produced. Enable, restart or remove one without touching strategy code."
+        description="Every discovered scanner, its market coverage and what it has produced. Enable, uninstall or restore without touching strategy code."
         actions={
-          <Button variant="primary" size="md" onClick={() => navigate("/upload")}>
-            Upload scanner
-          </Button>
+          <>
+            <Button variant="secondary" size="md" onClick={() => navigate("/scanners/trash")}>
+              <Recycle className="h-3.5 w-3.5" /> Recycle bin
+              {library.trash.length ? <Badge tone="warn">{library.trash.length}</Badge> : null}
+            </Button>
+            <Button variant="primary" size="md" onClick={() => navigate("/upload")}>
+              <UploadCloud className="h-3.5 w-3.5" /> Upload scanner
+            </Button>
+          </>
         }
         badge={<Badge tone="info">{rows.length} installed</Badge>}
       />
@@ -206,6 +201,7 @@ export function ScannerManagementPage({
                   <Th>Market</Th>
                   <Th>Version</Th>
                   <Th>Status</Th>
+                  <Th align="right">Active</Th>
                   <Th align="right">Symbols</Th>
                   <Th>Last scan</Th>
                   <Th align="right">Total signals</Th>
@@ -213,66 +209,68 @@ export function ScannerManagementPage({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row) => (
-                  <Tr key={row.id}>
-                    <Td>
-                      <button
-                        onClick={() => navigate(`/scanners/${row.id}`)}
-                        className="cursor-pointer text-left"
-                      >
-                        <div className="font-medium text-ink hover:text-info">{row.name}</div>
-                        <div className="font-mono text-[10px] text-faint">{row.id}</div>
-                      </button>
-                    </Td>
-                    <Td>
-                      <Badge tone={marketMeta(row.market).tone}>{marketMeta(row.market).label}</Badge>
-                    </Td>
-                    <Td className="tabnum">v{row.version}</Td>
-                    <Td>
-                      <div className="flex items-center gap-2">
-                        <StatusPill status={row.health} label={row.healthLabel} />
-                        <Switch
-                          checked={row.enabled}
-                          onChange={(next) => toggle(row, next)}
-                          label={`${row.enabled ? "Disable" : "Enable"} ${row.name}`}
-                        />
-                      </div>
-                    </Td>
-                    <Td align="right" className="tabnum">
-                      {row.covered.length}
-                      <span className="text-faint"> / {row.universe.length || "—"}</span>
-                    </Td>
-                    <Td className="whitespace-nowrap">
-                      <span title={row.lastScan ?? undefined}>{relTime(row.lastScan)}</span>
-                    </Td>
-                    <Td align="right">
-                      <div className="tabnum font-medium text-ink">{fmtInt(row.totalSignals)}</div>
-                      <div className={cn("tabnum text-[10px]", row.netR >= 0 ? "text-up" : "text-down")}>
-                        {fmtR(row.netR, 1)}
-                      </div>
-                    </Td>
-                    <Td align="right">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <IconButton label="View details" onClick={() => navigate(`/scanners/${row.id}`)}>
-                          <Eye className="h-3.5 w-3.5" />
-                        </IconButton>
-                        <IconButton label="Restart scanner" onClick={() => setPending({ kind: "restart", row })}>
-                          <RotateCw className="h-3.5 w-3.5" />
-                        </IconButton>
-                        <IconButton label="Update scanner" onClick={() => setPending({ kind: "update", row })}>
-                          <ArrowUpCircle className="h-3.5 w-3.5" />
-                        </IconButton>
-                        <IconButton
-                          label="Uninstall scanner"
-                          onClick={() => setPending({ kind: "uninstall", row })}
-                          className="hover:bg-down-soft hover:text-down"
+                {filtered.map((row) => {
+                  const isUser = userIds.has(row.id)
+                  return (
+                    <Tr key={row.id}>
+                      <Td>
+                        <button
+                          onClick={() => navigate(`/scanners/${row.id}`)}
+                          className="cursor-pointer text-left"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </IconButton>
-                      </div>
-                    </Td>
-                  </Tr>
-                ))}
+                          <div className="flex items-center gap-1.5 font-medium text-ink hover:text-info">
+                            {row.name}
+                            {isUser ? <Badge tone="violet">user</Badge> : null}
+                          </div>
+                          <div className="font-mono text-[10px] text-faint">{row.id}</div>
+                        </button>
+                      </Td>
+                      <Td>
+                        <Badge tone={marketMeta(row.market).tone}>{marketMeta(row.market).label}</Badge>
+                      </Td>
+                      <Td className="tabnum">v{row.version}</Td>
+                      <Td>
+                        <StatusPill status={row.health} label={row.healthLabel} />
+                      </Td>
+                      <Td align="right">
+                        <div className="flex justify-end">
+                          <Switch
+                            checked={row.enabled}
+                            onChange={(next) => toggle(row, next)}
+                            label={`${row.enabled ? "Disable" : "Enable"} ${row.name}`}
+                          />
+                        </div>
+                      </Td>
+                      <Td align="right" className="tabnum">
+                        {row.covered.length}
+                        <span className="text-faint"> / {row.universe.length || "—"}</span>
+                      </Td>
+                      <Td className="whitespace-nowrap">
+                        <span title={row.lastScan ?? undefined}>{relTime(row.lastScan)}</span>
+                      </Td>
+                      <Td align="right">
+                        <div className="tabnum font-medium text-ink">{fmtInt(row.totalSignals)}</div>
+                        <div className={cn("tabnum text-[10px]", row.netR >= 0 ? "text-up" : "text-down")}>
+                          {fmtR(row.netR, 1)}
+                        </div>
+                      </Td>
+                      <Td align="right">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <IconButton label="View details" onClick={() => navigate(`/scanners/${row.id}`)}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </IconButton>
+                          <IconButton
+                            label={isUser ? "Uninstall scanner" : "Disable scanner"}
+                            onClick={() => setPending(row)}
+                            className="hover:bg-down-soft hover:text-down"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </IconButton>
+                        </div>
+                      </Td>
+                    </Tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -282,25 +280,42 @@ export function ScannerManagementPage({
       <ConfirmDialog
         open={pending !== null}
         busy={busy}
-        title={
-          pending?.kind === "uninstall"
-            ? `Uninstall ${pending.row.name}?`
-            : pending?.kind === "restart"
-              ? `Restart ${pending.row.name}?`
-              : `Check ${pending?.row.name ?? "scanner"} for updates?`
-        }
+        title={pending && userIds.has(pending.id) ? `Uninstall ${pending.name}?` : `Disable ${pending?.name ?? "scanner"}?`}
         description={
-          pending?.kind === "uninstall"
-            ? "The scanner stops producing signals immediately. Its historical signals stay in the database."
-            : pending?.kind === "restart"
-              ? "The scanner process is recycled on the next engine cycle; open positions are unaffected."
-              : "Compares the installed bundle against the newest upload in the preview library."
+          pending && userIds.has(pending.id)
+            ? "The scanner is moved to the recycle bin and stops producing signals. Its historical signals stay in the database, and you can restore it any time."
+            : "Built-in scanners ship with ASTA and cannot be removed. This disables it in markets.yaml (applied on restart); its history stays available."
         }
-        confirmLabel={pending?.kind === "uninstall" ? "Uninstall" : pending?.kind === "restart" ? "Restart" : "Check"}
-        tone={pending?.kind === "uninstall" ? "danger" : "primary"}
-        onConfirm={runPending}
+        confirmLabel={pending && userIds.has(pending.id) ? "Move to recycle bin" : "Disable"}
+        tone="danger"
+        onConfirm={runUninstall}
         onCancel={() => setPending(null)}
       />
     </div>
   )
+}
+
+function buildRowsInput(
+  data: AppData,
+  library: LibraryInfo,
+  overrides: Record<string, boolean>,
+): Parameters<typeof buildScannerRows>[0] {
+  const engineScanners: ConfigScanner[] = data.setup?.scanners ?? data.config?.scanners ?? []
+  const engineIds = new Set(engineScanners.map((s) => s.id))
+  const userScanners: ConfigScanner[] = library.installed
+    .filter((r) => !engineIds.has(r.scannerId))
+    .map((r) => ({
+      id: r.scannerId,
+      name: r.name,
+      market: r.market,
+      timeframe: r.timeframes[0] ?? "1h",
+      enabled: r.enabled ?? true,
+    }))
+  return {
+    scanners: [...engineScanners, ...userScanners],
+    setup: data.setup,
+    system: data.system,
+    signals: data.dataset?.signals ?? [],
+    overrides,
+  }
 }

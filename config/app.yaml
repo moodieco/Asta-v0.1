@@ -21,11 +21,14 @@ storage:
   dedup_window_seconds: 3600
   enabled: true
 
-# Local dashboard (asta serve). Loopback only - the API is unauthenticated.
+# Local dashboard (asta serve). Loopback access is always open; when `bind` is
+# 0.0.0.0 the dashboard is reachable from the LAN and remote requests must
+# present a share token (editor or view-only) issued at /api/share.
 web:
   host: 127.0.0.1
   port: 4310
   open_browser: true
+  bind: 0.0.0.0
 
 # Quick setup bookkeeping; secrets never live here (they go to .env).
 setup:

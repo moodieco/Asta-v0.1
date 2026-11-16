@@ -115,7 +115,11 @@ class AstaApp:
         registry = self.registry or ScannerRegistry()
         if not registry.classes:
             registry.discover()
-        scanners = registry.build_all(registry.load_configs(), self.config.scanner_overrides)
+        user_root = self.config.resolve_path("data/scanners")
+        registry.discover_user_scanners(user_root)
+        configs = registry.load_configs()
+        configs.update(registry.load_user_configs(user_root))
+        scanners = registry.build_all(configs, self.config.scanner_overrides)
         scanner_manager = ScannerManager(scanners)
 
         self._subscribe_event_logging()

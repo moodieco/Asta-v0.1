@@ -15,8 +15,9 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { fmtBytes, type AppData, type ConfigScanner } from "@/lib/api"
-import { previewActions, nextUploadId, type Market, type UploadRecord } from "@/lib/preview"
+import { fmtBytes, type AppData } from "@/lib/api"
+import { libraryActions, type LibraryScanner } from "@/lib/library"
+import type { Market } from "@/lib/preview"
 import {
   Badge,
   Button,
@@ -77,7 +78,8 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
   const [installPct, setInstallPct] = useState(0)
   const [outcome, setOutcome] = useState<Outcome>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [installed, setInstalled] = useState<UploadRecord | null>(null)
+  const [installed, setInstalled] = useState<LibraryScanner | null>(null)
+  const [fileObj, setFileObj] = useState<File | null>(null)
 
   const dirty = Boolean(file || name || description)
 
@@ -105,6 +107,7 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
       hash,
       ext,
     })
+    setFileObj(incoming)
     if (!name) {
       setName(
         incoming.name
@@ -144,45 +147,52 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
 
   /* -------------------------------------------------- install */
 
-  const install = () => {
+  const install = async () => {
+    if (!file || !fileObj) return
     setStep(4)
     setInstalling(true)
-    setInstallPct(0)
-    let pct = 0
-    const timer = window.setInterval(() => {
-      pct = Math.min(100, pct + 8 + Math.random() * 14)
-      setInstallPct(pct)
-      if (pct >= 100) {
-        window.clearInterval(timer)
-        window.setTimeout(() => {
-          const record: UploadRecord = {
-            id: nextUploadId(),
-            name: name.trim(),
-            scannerId: buildScannerId(market, name, data.setup?.scanners ?? data.config?.scanners ?? []),
-            market,
-            version: version.trim(),
-            uploadedAt: new Date().toISOString(),
-            status: "installed",
-            sizeBytes: file?.size ?? 0,
-            timeframes,
-            description: description.trim(),
-            dependencies: dependencies
-              .split(/[\n,]/)
-              .map((item) => item.trim())
-              .filter(Boolean),
-            changes: ["Uploaded through the dashboard installer"],
-            compatibility: "ASTA 0.1.x · core >= 0.1",
-            sample: true,
-          }
-          previewActions.addUpload(record)
-          setInstalled(record)
-          setInstalling(false)
-          setOutcome("success")
-          setStep(5)
-          toast.success("Scanner installed", `${record.name} is registered in the preview library.`)
-        }, 420)
+    setInstallPct(10)
+    try {
+      let source: string
+      if (file.ext === "zip") {
+        const buffer = await fileObj.arrayBuffer()
+        const bytes = new Uint8Array(buffer)
+        let binary = ""
+        for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i])
+        source = btoa(binary)
+      } else {
+        source = await fileObj.text()
       }
-    }, 180)
+      const deps = dependencies
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+
+      setInstallPct(45)
+      const { record } = await libraryActions.install({
+        name: name.trim(),
+        market,
+        version: version.trim(),
+        timeframes,
+        description: description.trim(),
+        dependencies: deps,
+        changes: ["Uploaded through the dashboard installer"],
+        source,
+        sourceName: file.name,
+        sha256: file.hash,
+      })
+      setInstallPct(100)
+      setInstalled(record)
+      setInstalling(false)
+      setOutcome("success")
+      setStep(5)
+      toast.success("Scanner installed", `${record.name} is registered as ${record.scannerId}. Restart the engine to activate it.`)
+    } catch (error) {
+      setInstalling(false)
+      setOutcome("error")
+      setStep(5)
+      toast.error("Installation failed", error instanceof Error ? error.message : String(error))
+    }
   }
 
   const reset = () => {
@@ -207,8 +217,8 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
         back="Scanner management"
         onBack={() => navigate("/scanners")}
         title="Upload scanner"
-        description="Drop a bundle, validate it locally, review the manifest and install. Nothing is written to the engine until the installer runs."
-        badge={<PreviewChip label="Installer preview" />}
+        description="Drop a bundle, validate it locally, review the manifest and install. The bundle is written to the scanner library and picked up by the engine on its next restart."
+        badge={<Badge tone="warn">Coming soon</Badge>}
         actions={
           dirty ? (
             <Button variant="ghost" onClick={() => setConfirmCancel(true)}>
@@ -217,6 +227,13 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
           ) : null
         }
       />
+
+      <Notice tone="warn" title="Coming soon — installing is paused">
+        The installer is being rebuilt around a single-file scanner template: metadata, params and the strategy
+        live in one <code className="rounded bg-warn-soft px-1">scanner.py</code>, so a scanner can be read,
+        reviewed and shared as one file. The flow below still shows what a bundle needs; the final install step is
+        disabled until the template ships.
+      </Notice>
 
       <Stepper step={step} />
 
@@ -481,8 +498,8 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
                 <Button variant="secondary" onClick={() => setStep(2)}>
                   <ArrowLeft className="h-3.5 w-3.5" /> Back to validation
                 </Button>
-                <Button variant="primary" size="md" onClick={install}>
-                  Install scanner
+                <Button variant="primary" size="md" onClick={install} disabled title="Coming soon">
+                  Install scanner (coming soon)
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -540,8 +557,8 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
                     <div className="mt-2 text-[13.5px] font-semibold text-ink">{installed.name} installed</div>
                     <p className="mx-auto mt-1 max-w-sm text-[11.5px] leading-relaxed text-faint">
                       Registered as <span className="font-mono text-dim">{installed.scannerId}</span> · v
-                      {installed.version} · {installed.timeframes.join(", ")}. It appears in scanner management
-                      immediately.
+                      {installed.version} · {installed.timeframes.join(", ")}. The engine picks it up on the next
+                      restart.
                     </p>
                     <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                       <Button variant="primary" onClick={() => navigate("/scanners")}>
@@ -607,18 +624,18 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
               </div>
               <div className="flex gap-2">
                 <Info className="mt-[2px] h-3.5 w-3.5 shrink-0 text-info" />
-                The engine picks the scanner up on its next scheduler cycle. Signals flow to Signal History as usual.
+                The engine picks the scanner up on its next restart, then signals flow to Signal History as usual.
               </div>
               <div className="flex gap-2">
                 <AlertTriangle className="mt-[2px] h-3.5 w-3.5 shrink-0 text-warn" />
-                This build records the install in the preview layer only — no files are written to the engine.
+                Deleting a scanner moves it to the recycle bin — nothing is erased until you purge it.
               </div>
             </div>
           </Card>
 
-          <Notice tone="info" title="Preview installer">
-            The dashboard API is read-only, so the install flow runs locally. Every screen, validation state and
-            error path is real UI; persistence is local.
+          <Notice tone="info" title="Scanner library">
+            Uploads land in <span className="font-mono">data/scanners/&lt;market&gt;/&lt;ID&gt;/</span> and appear in
+            Scanner Management immediately; the engine activates them on restart.
           </Notice>
         </div>
       </div>
@@ -637,25 +654,6 @@ export function UploadScannerPage({ data, navigate }: { data: AppData; navigate:
       />
     </div>
   )
-}
-
-/* -------------------------------------------------------------- */
-
-function buildScannerId(market: Market, name: string, existing: ConfigScanner[]): string {
-  const prefix = MARKET_PREFIX[market]
-  const numbers = existing
-    .filter((scanner) => scanner.market === market)
-    .map((scanner) => Number.parseInt(scanner.id.slice(3, 6), 10))
-    .filter((value) => Number.isFinite(value))
-  const next = (numbers.length ? Math.max(...numbers) : 0) + 1
-  const slug = name
-    .replace(/^[A-Z]{3}\d{3}[_\s-]*/i, "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 28)
-  return `${prefix}${String(next).padStart(3, "0")}_${slug || "SCANNER"}`
 }
 
 function Stepper({ step }: { step: Step }) {

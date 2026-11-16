@@ -12,7 +12,9 @@ Adding a scanner therefore means: drop a folder with ``scanner.py`` +
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import pkgutil
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Type
 
@@ -152,6 +154,64 @@ class ScannerRegistry:
                 continue
             if config.id in configs:
                 raise ConfigurationError("duplicate scanner config id {!r}".format(config.id))
+            configs[config.id] = config
+        return configs
+
+    # -- user scanners (uploaded through the dashboard) --------------------
+    def discover_user_scanners(self, root: Path) -> List[str]:
+        """Import user ``scanner.py`` files from ``<root>/<market>/<ID>/``.
+
+        Uploaded scanners live outside ``src/asta/markets/``, so they cannot be
+        found by :meth:`discover`. Each file is imported by path under a synthetic
+        module name; its ``@register_scanner`` decorator registers the class exactly
+        like a built-in scanner.
+        """
+        imported: List[str] = []
+        if not Path(root).is_dir():
+            return imported
+        for scanner_py in sorted(Path(root).glob("*/*/scanner.py")):
+            scanner_id = scanner_py.parent.name
+            market = scanner_py.parent.parent.name
+            module_name = "asta_user_scanners.{}.{}".format(market, scanner_id)
+            if module_name in sys.modules:
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location(module_name, scanner_py)
+                if spec is None or spec.loader is None:
+                    logger.error("cannot load user scanner", extra={"path": str(scanner_py)})
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+            except Exception as exc:  # noqa: BLE001 - a broken scanner must not kill startup
+                logger.error(
+                    "failed to import user scanner module",
+                    extra={"path": str(scanner_py), "error": str(exc)},
+                )
+                continue
+            imported.append(module_name)
+        self._classes = dict(SCANNER_CLASSES)
+        return imported
+
+    @classmethod
+    def load_user_configs(cls, root: Path) -> Dict[str, ScannerConfig]:
+        """Read ``<root>/<market>/<ID>/config.yaml`` into ScannerConfig objects."""
+        configs: Dict[str, ScannerConfig] = {}
+        if not Path(root).is_dir():
+            return configs
+        for path in sorted(Path(root).glob("*/*/config.yaml")):
+            try:
+                raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                raw.pop("scanner_id", None)
+                raw.setdefault("id", path.parent.name)
+                raw["source_path"] = str(path)
+                config = ScannerConfig(**raw)
+            except Exception as exc:  # noqa: BLE001 - surface bad config, keep going
+                logger.error(
+                    "invalid user scanner config",
+                    extra={"path": str(path), "error": str(exc)},
+                )
+                continue
             configs[config.id] = config
         return configs
 

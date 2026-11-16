@@ -1,80 +1,64 @@
 import { useMemo, useState } from "react"
-import { CalendarClock, CheckCircle2, CloudUpload, FileClock, History, Package, Trash2 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { ArrowDownToLine, History, Package, RotateCcw, Trash2, UploadCloud } from "lucide-react"
 import { fmtDateTime, relTime } from "@/lib/format"
-import { fmtBytes, type AppData } from "@/lib/api"
-import { previewActions, usePreview, versionChain, type UploadRecord } from "@/lib/preview"
+import { useLibrary, type HistoryEvent } from "@/lib/library"
 import { marketMeta } from "@/lib/scanners"
-import {
-  Badge,
-  Button,
-  Card,
-  CardHeader,
-  EmptyState,
-  MiniStat,
-  PreviewChip,
-  SearchInput,
-  Select,
-  Td,
-  Th,
-  Tr,
-} from "@/components/ui"
-import { ConfirmDialog, Modal, useToast } from "@/components/feedback"
+import { Badge, Button, Card, EmptyState, SearchInput, Select, Td, Th, Tr } from "@/components/ui"
 import { PageHeader, Notice } from "@/components/layout"
 
-export function UploadHistoryPage({ navigate }: { data: AppData; navigate: (path: string) => void }) {
-  const preview = usePreview()
-  const toast = useToast()
+const ACTION_META: Record<string, { label: string; tone: "up" | "down" | "warn" | "neutral" | "info"; icon: React.ElementType }> = {
+  install: { label: "Installed", tone: "up", icon: UploadCloud },
+  uninstall: { label: "Deleted", tone: "warn", icon: Trash2 },
+  restore: { label: "Restored", tone: "info", icon: RotateCcw },
+  purge: { label: "Purged", tone: "down", icon: Trash2 },
+  "set-enabled": { label: "Toggled", tone: "neutral", icon: History },
+}
+
+export function UploadHistoryPage({ navigate }: { data: unknown; navigate: (path: string) => void }) {
+  const { library } = useLibrary()
   const [query, setQuery] = useState("")
-  const [market, setMarket] = useState("all")
-  const [status, setStatus] = useState("all")
-  const [detail, setDetail] = useState<UploadRecord | null>(null)
-  const [confirmRemove, setConfirmRemove] = useState<UploadRecord | null>(null)
+  const [action, setAction] = useState("all")
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return [...preview.uploads]
-      .filter((row) => {
-        if (market !== "all" && row.market !== market) return false
-        if (status !== "all" && row.status !== status) return false
-        if (!q) return true
-        return (
-          row.name.toLowerCase().includes(q) ||
-          row.scannerId.toLowerCase().includes(q) ||
-          row.version.includes(q)
-        )
-      })
-      .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
-  }, [preview.uploads, query, market, status])
+    return library.history.filter((event) => {
+      if (action !== "all" && event.action !== action) return false
+      if (!q) return true
+      return (
+        (event.name ?? "").toLowerCase().includes(q) ||
+        (event.scannerId ?? "").toLowerCase().includes(q) ||
+        (event.version ?? "").toLowerCase().includes(q)
+      )
+    })
+  }, [library.history, query, action])
 
-  const installed = preview.uploads.filter((row) => row.status === "installed").length
-  const failed = preview.uploads.filter((row) => row.status === "failed").length
-  const latest = [...preview.uploads].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0]
+  const installs = library.history.filter((e) => e.action === "install").length
+  const deleted = library.history.filter((e) => e.action === "uninstall").length
+  const restored = library.history.filter((e) => e.action === "restore").length
 
   return (
     <div className="animate-rise">
       <PageHeader
         title="Upload history"
-        description="Every bundle that reached the installer, with its version chain, change log and compatibility notes."
-        badge={<PreviewChip label="Sample data" />}
+        description="Every install, uninstall, restore and purge recorded by the scanner library."
         actions={
           <Button variant="primary" size="md" onClick={() => navigate("/upload")}>
-            Upload scanner
+            <UploadCloud className="h-3.5 w-3.5" /> Upload scanner
           </Button>
         }
       />
 
-      <Notice tone="info" title="Installer records are preview data">
-        The engine does not persist installer events yet. This page shows the designed record shape with sample
-        entries; signal and runtime data elsewhere in the app stays real.
+      <Notice tone="info" title="Scanner library events">
+        These events come from <span className="font-mono">data/scanners/history.jsonl</span>. Installed bundles live in{" "}
+        <span className="font-mono">{library.root || "data/scanners/"}</span>; deleted ones wait in the recycle bin.
       </Notice>
 
       <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Uploads recorded", value: String(preview.uploads.length) },
-          { label: "Installed", value: String(installed) },
-          { label: "Failed", value: String(failed) },
-          { label: "Latest upload", value: latest ? relTime(latest.uploadedAt) : "—" },
+          { label: "Events", value: library.history.length },
+          { label: "Installed", value: installs },
+          { label: "Deleted", value: deleted },
+          { label: "Restored", value: restored },
         ].map((stat) => (
           <Card key={stat.label} className="px-4 py-3">
             <div className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-faint">{stat.label}</div>
@@ -87,29 +71,19 @@ export function UploadHistoryPage({ navigate }: { data: AppData; navigate: (path
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
           <SearchInput value={query} onChange={setQuery} placeholder="Search scanner, id or version…" />
           <Select
-            label="Market"
-            value={market}
-            onChange={setMarket}
+            label="Action"
+            value={action}
+            onChange={setAction}
             options={[
-              { value: "all", label: "All markets" },
-              { value: "crypto", label: "Crypto" },
-              { value: "stock", label: "Stocks" },
-              { value: "forex", label: "Forex" },
-            ]}
-          />
-          <Select
-            label="Status"
-            value={status}
-            onChange={setStatus}
-            options={[
-              { value: "all", label: "All status" },
-              { value: "installed", label: "Installed" },
-              { value: "superseded", label: "Superseded" },
-              { value: "failed", label: "Failed" },
+              { value: "all", label: "All actions" },
+              { value: "install", label: "Installed" },
+              { value: "uninstall", label: "Deleted" },
+              { value: "restore", label: "Restored" },
+              { value: "purge", label: "Purged" },
             ]}
           />
           <span className="ml-auto text-[11px] text-faint">
-            <span className="tabnum">{rows.length}</span> of {preview.uploads.length} records
+            <span className="tabnum">{rows.length}</span> of {library.history.length} events
           </span>
         </div>
 
@@ -117,8 +91,8 @@ export function UploadHistoryPage({ navigate }: { data: AppData; navigate: (path
           <div className="p-4">
             <EmptyState
               icon={<Package className="h-4 w-4" />}
-              title="No uploads match"
-              description="Clear the filters, or upload a new scanner bundle to start a history."
+              title="No events yet"
+              description="Upload a scanner bundle to start a history."
               action={
                 <Button variant="secondary" onClick={() => navigate("/upload")}>
                   Upload scanner
@@ -131,183 +105,47 @@ export function UploadHistoryPage({ navigate }: { data: AppData; navigate: (path
             <table className="w-full text-[12px]">
               <thead>
                 <tr>
-                  <Th>Scanner name</Th>
+                  <Th>Time</Th>
+                  <Th>Action</Th>
+                  <Th>Scanner</Th>
                   <Th>Market</Th>
                   <Th>Version</Th>
-                  <Th>Upload date</Th>
-                  <Th>Installation status</Th>
-                  <Th>Update history</Th>
-                  <Th align="right">Actions</Th>
+                  <Th>Detail</Th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
-                  const chain = versionChain(preview.uploads, row.scannerId)
-                  return (
-                    <Tr key={row.id}>
-                      <Td>
-                        <div className="font-medium text-ink">{row.name}</div>
-                        <div className="font-mono text-[10px] text-faint">{row.scannerId}</div>
-                      </Td>
-                      <Td>
-                        <Badge tone={marketMeta(row.market).tone}>{marketMeta(row.market).label}</Badge>
-                      </Td>
-                      <Td className="tabnum">v{row.version}</Td>
-                      <Td className="whitespace-nowrap" title={fmtDateTime(row.uploadedAt)}>
-                        {relTime(row.uploadedAt)}
-                      </Td>
-                      <Td>
-                        <Badge
-                          tone={
-                            row.status === "installed"
-                              ? "up"
-                              : row.status === "failed"
-                                ? "down"
-                                : row.status === "superseded"
-                                  ? "neutral"
-                                  : "info"
-                          }
-                        >
-                          {row.status}
-                        </Badge>
-                      </Td>
-                      <Td>
-                        <span className="text-[11px] text-faint">
-                          {chain.length > 1
-                            ? `${chain.length} releases · newest v${chain[0].version}`
-                            : "first release"}
-                        </span>
-                      </Td>
-                      <Td align="right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" onClick={() => setDetail(row)}>
-                            Details
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            onClick={() => navigate("/scanners")}
-                            className="text-faint"
-                          >
-                            Open
-                          </Button>
-                          {row.status === "failed" || row.status === "superseded" ? (
-                            <Button
-                              variant="ghost"
-                              onClick={() => setConfirmRemove(row)}
-                              className="text-faint hover:text-down"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          ) : null}
-                        </div>
-                      </Td>
-                    </Tr>
-                  )
-                })}
+                {rows.map((event, index) => (
+                  <HistoryRow key={`${event.at}-${event.action}-${index}`} event={event} />
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </Card>
-
-      <Modal
-        open={detail !== null}
-        onClose={() => setDetail(null)}
-        title={detail ? `${detail.name} · v${detail.version}` : ""}
-        description={detail ? `${marketMeta(detail.market).label} · ${fmtDateTime(detail.uploadedAt)}` : undefined}
-        width="max-w-[560px]"
-        footer={
-          <Button variant="secondary" onClick={() => setDetail(null)}>
-            Close
-          </Button>
-        }
-      >
-        {detail ? (
-          <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-2">
-              {[
-                ["Bundle size", fmtBytes(detail.sizeBytes)],
-                ["Timeframes", detail.timeframes.join(", ")],
-                ["Status", detail.status],
-                ["Origin", "uploaded through installer"],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-line-soft bg-surface-2 px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-wider text-faint">{label}</div>
-                  <div className="mt-0.5 text-[11.5px] text-ink">{value}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-xl border border-line-soft bg-surface-2 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wider text-faint">Description</div>
-              <p className="mt-0.5 text-[11.5px] leading-relaxed text-dim">{detail.description}</p>
-            </div>
-
-            <div>
-              <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
-                <FileClock className="h-3 w-3" /> Changes in this version
-              </div>
-              <ul className="space-y-1">
-                {detail.changes.map((change) => (
-                  <li key={change} className="flex items-start gap-1.5 text-[11.5px] leading-relaxed text-dim">
-                    <CheckCircle2 className="mt-[3px] h-3 w-3 shrink-0 text-up" />
-                    {change}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="rounded-xl border border-line bg-surface-2 px-3 py-2">
-              <MiniStat label="Compatibility" value={detail.compatibility} />
-              <MiniStat label="Dependencies" value={detail.dependencies.join(", ") || "none"} />
-            </div>
-
-            <div>
-              <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
-                <History className="h-3 w-3" /> Version chain
-              </div>
-              <div className="space-y-1.5">
-                {versionChain(preview.uploads, detail.scannerId).map((version, index) => (
-                  <div
-                    key={version.id}
-                    className={cn(
-                      "flex items-center justify-between gap-2 rounded-xl border px-3 py-2",
-                      version.id === detail.id ? "border-info/30 bg-info-soft/40" : "border-line-soft bg-surface-2",
-                    )}
-                  >
-                    <div>
-                      <div className="tabnum text-[11.5px] font-medium text-ink">v{version.version}</div>
-                      <div className="text-[10px] text-faint">
-                        <CalendarClock className="mr-1 inline h-2.5 w-2.5" />
-                        {fmtDateTime(version.uploadedAt)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {index === 0 ? <Badge tone="up">newest</Badge> : null}
-                      <Badge tone={version.status === "failed" ? "down" : "neutral"}>{version.status}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </Modal>
-
-      <ConfirmDialog
-        open={confirmRemove !== null}
-        title={`Remove ${confirmRemove?.name ?? ""} v${confirmRemove?.version ?? ""} from history?`}
-        description="The record disappears from the upload history. Installed scanners are unaffected."
-        confirmLabel="Remove record"
-        onConfirm={() => {
-          if (confirmRemove) {
-            previewActions.removeUpload(confirmRemove.id)
-            toast.success("Upload record removed")
-          }
-          setConfirmRemove(null)
-        }}
-        onCancel={() => setConfirmRemove(null)}
-      />
     </div>
+  )
+}
+
+function HistoryRow({ event }: { event: HistoryEvent }) {
+  const meta = ACTION_META[event.action] ?? { label: event.action, tone: "neutral" as const, icon: ArrowDownToLine }
+  const Icon = meta.icon
+  return (
+    <Tr>
+      <Td className="whitespace-nowrap" title={fmtDateTime(event.at)}>
+        {relTime(event.at)}
+      </Td>
+      <Td>
+        <Badge tone={meta.tone}>
+          <Icon className="h-3 w-3" /> {meta.label}
+        </Badge>
+      </Td>
+      <Td>
+        <div className="font-medium text-ink">{event.name ?? "—"}</div>
+        <div className="font-mono text-[10px] text-faint">{event.scannerId}</div>
+      </Td>
+      <Td>{event.market ? <Badge tone={marketMeta(event.market).tone}>{marketMeta(event.market).label}</Badge> : "—"}</Td>
+      <Td className="tabnum">{event.version ? `v${event.version}` : "—"}</Td>
+      <Td className="max-w-[280px] truncate text-[11px] text-faint">{event.detail ?? "—"}</Td>
+    </Tr>
   )
 }

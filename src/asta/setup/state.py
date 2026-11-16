@@ -61,6 +61,10 @@ class SetupState:
     # -- queries ----------------------------------------------------------
     @property
     def complete(self) -> bool:
+        # Hosted deploys are configured through committed config + env vars, so
+        # they should not be greeted by the setup wizard on every boot.
+        if (os.environ.get("ASTA_SETUP_COMPLETE") or "").strip().lower() in ("1", "true", "yes", "on"):
+            return True
         return bool(self.data.get("completed_at"))
 
     def completed_steps(self) -> List[str]:

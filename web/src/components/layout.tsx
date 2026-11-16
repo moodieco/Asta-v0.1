@@ -8,16 +8,21 @@ import {
   History,
   LayoutDashboard,
   Menu,
+  Moon,
   PackageCheck,
+  Recycle,
   RefreshCw,
   Settings,
+  Share2,
   ShieldAlert,
+  Sun,
   X,
   Zap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { relTime } from "@/lib/format"
-import { Button, IconButton, PreviewChip, StatusPill } from "@/components/ui"
+import { useTheme } from "@/lib/theme"
+import { Badge, Button, IconButton, StatusPill } from "@/components/ui"
 
 export interface NavItem {
   path: string
@@ -25,13 +30,15 @@ export interface NavItem {
   hint: string
   icon: React.ElementType
   group: string
+  soon?: boolean
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { path: "/overview", label: "Overview", hint: "Health, edge, activity", icon: LayoutDashboard, group: "Monitor" },
   { path: "/system", label: "System Monitor", hint: "Components & resources", icon: Activity, group: "Monitor" },
   { path: "/scanners", label: "Scanner Management", hint: "Installed scanners", icon: Boxes, group: "Scanners" },
-  { path: "/upload", label: "Upload Scanner", hint: "Validate & install", icon: CloudUpload, group: "Scanners" },
+  { path: "/upload", label: "Upload Scanner", hint: "Validate & install", icon: CloudUpload, group: "Scanners", soon: true },
+  { path: "/scanners/trash", label: "Recycle Bin", hint: "Restore deleted", icon: Recycle, group: "Scanners", soon: true },
   { path: "/history", label: "Signal History", hint: "Every signal", icon: History, group: "Signals" },
   { path: "/uploads", label: "Upload History", hint: "Versions & changes", icon: PackageCheck, group: "Signals" },
   { path: "/alerts", label: "Alert Management", hint: "Discord webhooks", icon: Bell, group: "Configuration" },
@@ -108,6 +115,11 @@ export function Sidebar({
                           {item.label}
                         </span>
                       </span>
+                      {item.soon ? (
+                        <span className="shrink-0 rounded-full border border-warn/20 bg-warn-soft px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-warn">
+                          Soon
+                        </span>
+                      ) : null}
                       {active ? <span className="h-1.5 w-1.5 rounded-full bg-info" /> : null}
                     </button>
                   )
@@ -148,8 +160,7 @@ export function Sidebar({
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 px-1 text-[9.5px] text-faint">
-          <span>sqlite · read-only api</span>
-          <PreviewChip label="Preview writes" />
+          <span>sqlite · live api · recycle bin</span>
         </div>
       </div>
     </aside>
@@ -172,7 +183,7 @@ export function MobileNav({
   if (!open) return null
   return (
     <div className="fixed inset-0 z-[60] lg:hidden">
-      <div className="absolute inset-0 bg-[#101828]/30 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-ink/20 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <div className="relative flex h-full w-[270px] flex-col border-r border-line bg-surface">
         <div className="flex items-center justify-between px-4 py-3">
           <span className="text-[13px] font-semibold text-ink">ASTA</span>
@@ -197,7 +208,12 @@ export function MobileNav({
                 )}
               >
                 <Icon className={cn("h-4 w-4", active ? "text-info" : "text-faint")} />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.soon ? (
+                  <span className="rounded-full border border-warn/20 bg-warn-soft px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-warn">
+                    Soon
+                  </span>
+                ) : null}
               </button>
             )
           })}
@@ -227,6 +243,8 @@ export function Topbar({
   refreshing,
   onOpenMenu,
   showMenu,
+  onShare,
+  viewOnly = false,
 }: {
   title: string
   crumbs?: string[]
@@ -236,7 +254,12 @@ export function Topbar({
   refreshing: boolean
   onOpenMenu: () => void
   showMenu: boolean
+  onShare?: () => void
+  viewOnly?: boolean
 }) {
+  const { theme, toggle } = useTheme()
+  const dark = theme === "dark"
+
   return (
     <header className="sticky top-0 z-40 flex h-[54px] items-center gap-2 border-b border-line bg-bg/85 px-3 backdrop-blur-xl sm:px-5">
       {showMenu ? (
@@ -250,7 +273,7 @@ export function Topbar({
             {crumbs.map((crumb) => (
               <React.Fragment key={crumb}>
                 <span className="hidden truncate sm:inline">{crumb}</span>
-                <span className="hidden text-[#c7d0db] sm:inline">/</span>
+                <span className="hidden text-line sm:inline">/</span>
               </React.Fragment>
             ))}
           </>
@@ -259,9 +282,22 @@ export function Topbar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {viewOnly ? <Badge tone="warn">view only</Badge> : null}
         <span className="hidden sm:inline">
           <StatusPill status={engineStatus} label={engineLabel} />
         </span>
+        <IconButton
+          label={dark ? "Switch to light theme" : "Switch to dark theme"}
+          onClick={toggle}
+        >
+          {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+        </IconButton>
+        {onShare ? (
+          <Button variant="secondary" onClick={onShare} className="gap-1.5">
+            <Share2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Share</span>
+          </Button>
+        ) : null}
         <Button variant="secondary" onClick={onRefresh} className="gap-1.5">
           <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
           <span className="hidden sm:inline">Refresh</span>

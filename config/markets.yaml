@@ -14,27 +14,50 @@ markets:
 
 # Per-scanner overrides: enabled / timeframe / params / symbols
 scanner_overrides:
+  CXS004_EMA_PULLBACK:
+    enabled: true
   FXS001_RSI_DIVERGENCE:
+    enabled: true
     params:
       lookback: 120
       min_candles: 110        # MT5 feed window is capped, keep the warmup realistic
   FXS002_EMA_CROSSOVER:
+    enabled: true
     params:
       fast_period: 20
       slow_period: 50
       trend_period: 100
       min_candles: 110
+  FXS003_ASIA_RANGE_BREAKOUT:
+    enabled: true
+    timeframe: 1h             # 15m also works once the MT5 terminal feed is up
+    symbols: [USD_JPY]
+    params:
+      session_start: "19:00"  # New York time, DST handled via zoneinfo
+      session_end: "00:00"
+      cutoff: "13:30"         # no new breaks after the NY session exit
+      require_sweep: false    # true = only trade a break that swept the other edge
+      reward_ratio: 2.0       # time exit has no TP, so this stands in for it
+      max_bars: 13            # ~13h of 1h bars -> expiry lands near 13:30 NY
+      min_range_atr: 0.35
+      max_range_atr: 2.5
+      min_candles: 60
   CXS001_RSI_DIVERGENCE:
+    enabled: true
     timeframe: 1h
   CXS002_VOLUME_SPIKE:
+    enabled: true
     params:
       spike_multiplier: 3.0
   CXS003_BREAKOUT_TREND:
+    enabled: true
     params:
       breakout_lookback: 30
   STS001_EMA_TREND:
+    enabled: true
     params:
       fast_period: 20
       slow_period: 50
   STS002_BREAKOUT_TREND:
+    enabled: true
     timeframe: 1d

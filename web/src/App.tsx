@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react"
 import { CircleDot } from "lucide-react"
 import { useAppData } from "@/lib/api"
 import { useRoute } from "@/lib/router"
-import type { Range } from "@/lib/range"
-import { usePreview } from "@/lib/preview"
+import type { CustomRange, Range } from "@/lib/range"
+import { useLibrary } from "@/lib/library"
 import { buildScannerRows } from "@/lib/scanners"
 import { MobileNav, Sidebar, Topbar } from "@/components/layout"
 import { ToastProvider } from "@/components/feedback"
+import { ShareDialog } from "@/components/share"
 import { Card, Skeleton } from "@/components/ui"
 import { OverviewPage } from "@/pages/Overview"
 import { ScannerManagementPage } from "@/pages/ScannerManagement"
@@ -14,6 +15,7 @@ import { ScannerDetailPage } from "@/pages/ScannerDetail"
 import { UploadScannerPage } from "@/pages/UploadScanner"
 import { AlertsPage } from "@/pages/Alerts"
 import { UploadHistoryPage } from "@/pages/UploadHistory"
+import { RecycleBinPage } from "@/pages/RecycleBin"
 import { SystemMonitorPage } from "@/pages/SystemMonitor"
 import { SettingsPage } from "@/pages/Settings"
 import { SetupPage } from "@/pages/Setup"
@@ -34,12 +36,15 @@ const TITLES: Record<string, string> = {
 export default function App() {
   const data = useAppData()
   const route = useRoute()
-  const preview = usePreview()
+  const { access } = useLibrary()
   const [range, setRange] = useState<Range>("all")
+  const [custom, setCustom] = useState<CustomRange | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
 
   const root = route.segments[0] ?? "overview"
+  const isTrash = root === "scanners" && route.segments[1] === "trash"
 
   /* Setup gate: an unconfigured engine opens the wizard first. */
   useEffect(() => {
@@ -51,6 +56,16 @@ export default function App() {
     const title = TITLES[root] ?? "ASTA"
     document.title = `${title} · ASTA`
   }, [root])
+
+  /* A preset clears the custom window and vice versa — one source of truth. */
+  const selectRange = (next: Range) => {
+    setRange(next)
+    setCustom(null)
+  }
+  const selectCustom = (next: CustomRange | null) => {
+    setCustom(next)
+    if (next) setRange("all")
+  }
 
   const refresh = () => {
     setRefreshing(true)
@@ -65,18 +80,18 @@ export default function App() {
         setup: data.setup,
         system: data.system,
         signals: data.dataset?.signals ?? [],
-        overrides: preview.enabledOverrides,
+        overrides: {},
       }),
-    [data.setup, data.config, data.system, data.dataset, preview.enabledOverrides],
+    [data.setup, data.config, data.system, data.dataset],
   )
 
   const engineStatus = data.health ? (scanners.some((row) => row.health === "error") ? "warning" : "running") : "stopped"
   const engineLabel = data.health ? (engineStatus === "warning" ? "Degraded" : "Running") : "Offline"
 
-  const title =
-    root === "scanners" && route.segments[1]
-      ? scanners.find((row) => row.id.toLowerCase() === route.segments[1].toLowerCase())?.name ??
-        "Scanner detail"
+  const title = isTrash
+    ? "Recycle bin"
+    : root === "scanners" && route.segments[1]
+      ? scanners.find((row) => row.id.toLowerCase() === route.segments[1].toLowerCase())?.name ?? "Scanner detail"
       : TITLES[root] ?? "ASTA"
 
   return (
@@ -109,6 +124,8 @@ export default function App() {
             refreshing={refreshing}
             onOpenMenu={() => setMenuOpen(true)}
             showMenu
+            onShare={access === "editor" ? () => setShareOpen(true) : undefined}
+            viewOnly={access === "viewer"}
           />
 
           <main className="min-w-0 flex-1 px-3 pb-8 pt-4 sm:px-5">
@@ -117,21 +134,27 @@ export default function App() {
             ) : (
               <>
                 {root === "overview" ? (
-                  <OverviewPage data={data} range={range} onRange={setRange} dataset={data.dataset} />
+                  <OverviewPage
+                    data={data}
+                    range={range}
+                    onRange={selectRange}
+                    custom={custom}
+                    onCustom={selectCustom}
+                    dataset={data.dataset}
+                  />
                 ) : null}
                 {root === "system" ? <SystemMonitorPage data={data} navigate={route.navigate} /> : null}
+                {isTrash ? <RecycleBinPage navigate={route.navigate} /> : null}
                 {root === "scanners" && !route.segments[1] ? (
                   <ScannerManagementPage data={data} navigate={route.navigate} />
                 ) : null}
-                {root === "scanners" && route.segments[1] ? (
-                  <ScannerDetailPage
-                    data={data}
-                    scannerId={route.segments[1]}
-                    navigate={route.navigate}
-                  />
+                {root === "scanners" && route.segments[1] && !isTrash ? (
+                  <ScannerDetailPage data={data} scannerId={route.segments[1]} navigate={route.navigate} />
                 ) : null}
                 {root === "upload" ? <UploadScannerPage data={data} navigate={route.navigate} /> : null}
-                {root === "history" ? <SignalsPage data={data} range={range} onRange={setRange} /> : null}
+                {root === "history" ? (
+                  <SignalsPage data={data} range={range} onRange={selectRange} custom={custom} onCustom={selectCustom} />
+                ) : null}
                 {root === "uploads" ? <UploadHistoryPage data={data} navigate={route.navigate} /> : null}
                 {root === "alerts" ? <AlertsPage data={data} /> : null}
                 {root === "settings" ? <SettingsPage data={data} navigate={route.navigate} /> : null}
@@ -144,16 +167,20 @@ export default function App() {
           <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3 text-[10px] text-faint sm:px-5">
             <span className="inline-flex items-center gap-1.5">
               <CircleDot className="h-2.5 w-2.5 text-up" />
-              ASTA v0.1 · signal engine · dashboard reads data/history/asta.db read-only
+              ASTA v0.1 · signal engine · scanners + recycle bin on disk
             </span>
             <span className="tabnum">
               {data.dataset?.meta.total.toLocaleString() ?? "—"} signals ·{" "}
               {data.dataset?.meta.closed.toLocaleString() ?? "—"} closed · snapshot{" "}
-              {data.snapshotAt ? new Date(data.snapshotAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+              {data.snapshotAt
+                ? new Date(data.snapshotAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : "—"}
             </span>
           </footer>
         </div>
       </div>
+
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
     </ToastProvider>
   )
 }

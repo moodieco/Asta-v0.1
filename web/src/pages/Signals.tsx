@@ -4,23 +4,28 @@ import { cn } from "@/lib/utils"
 import { fmtInt, fmtPct, fmtR, relTime } from "@/lib/format"
 import type { AppData } from "@/lib/api"
 import { isClosed, statsOf } from "@/lib/metrics"
-import { withinRange, type Range } from "@/lib/range"
+import { withinRange, type CustomRange, type Range } from "@/lib/range"
 import { Badge, Button, Card, Meter, MiniStat, SkeletonRows } from "@/components/ui"
 import { HistoryTable } from "@/components/history"
 import { PageHeader, Notice } from "@/components/layout"
+import { RangePicker } from "@/components/range-picker"
 
 export function SignalsPage({
   data,
   range,
   onRange,
+  custom,
+  onCustom,
 }: {
   data: AppData
   range: Range
   onRange: (range: Range) => void
+  custom: CustomRange | null
+  onCustom: (custom: CustomRange | null) => void
 }) {
   const signals = useMemo(
-    () => (data.dataset?.signals ?? []).filter((signal) => withinRange(signal, range)),
-    [data.dataset, range],
+    () => (data.dataset?.signals ?? []).filter((signal) => withinRange(signal, range, custom)),
+    [data.dataset, range, custom],
   )
   const stats = useMemo(() => statsOf(signals), [signals])
   const openNow = signals.filter((signal) => signal.status === "open").length
@@ -33,20 +38,7 @@ export function SignalsPage({
         badge={<Badge tone="info">{fmtInt(data.dataset?.meta.total ?? 0)} stored</Badge>}
         actions={
           <>
-            <div className="inline-flex items-center gap-0.5 rounded-lg border border-line bg-surface-3 p-0.5">
-              {(["all", "90d", "30d"] as Range[]).map((option) => (
-                <button
-                  key={option}
-                  onClick={() => onRange(option)}
-                  className={cn(
-                    "cursor-pointer rounded-[6px] px-2.5 py-1 text-[11.5px] font-medium transition-all",
-                    range === option ? "bg-surface text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)]" : "text-faint hover:text-dim",
-                  )}
-                >
-                  {option === "all" ? "All time" : option}
-                </button>
-              ))}
-            </div>
+            <RangePicker range={range} custom={custom} onRange={onRange} onCustom={onCustom} />
             <Button variant="secondary" onClick={data.refresh}>
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </Button>

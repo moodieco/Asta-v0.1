@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils"
 import { fmtDateTime, fmtInt, fmtPct, fmtR, relTime } from "@/lib/format"
 import type { AppData } from "@/lib/api"
-import { usePreview, previewActions, versionChain } from "@/lib/preview"
+import { libraryActions, useLibrary } from "@/lib/library"
 import { activitySeries, buildScannerRows, marketMeta, symbolCoverage } from "@/lib/scanners"
 import {
   Badge,
@@ -44,10 +44,11 @@ export function ScannerDetailPage({
   scannerId: string
   navigate: (path: string) => void
 }) {
-  const preview = usePreview()
+  const preview = useLibrary()
   const toast = useToast()
   const [confirm, setConfirm] = useState<"restart" | "uninstall" | null>(null)
   const [busy, setBusy] = useState(false)
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({})
 
   const rows = useMemo(
     () =>
@@ -56,9 +57,9 @@ export function ScannerDetailPage({
         setup: data.setup,
         system: data.system,
         signals: data.dataset?.signals ?? [],
-        overrides: preview.enabledOverrides,
+        overrides,
       }),
-    [data.setup, data.config, data.system, data.dataset, preview.enabledOverrides],
+    [data.setup, data.config, data.system, data.dataset, overrides],
   )
 
   const scanner = rows.find((row) => row.id.toLowerCase() === scannerId.toLowerCase())
@@ -71,8 +72,8 @@ export function ScannerDetailPage({
   const activity = useMemo(() => activitySeries(ownSignals, 21), [ownSignals])
   const coverage = useMemo(() => symbolCoverage(ownSignals), [ownSignals])
   const versions = useMemo(
-    () => (scanner ? versionChain(preview.uploads, scanner.id) : []),
-    [preview.uploads, scanner],
+    () => (scanner ? preview.library.history.filter((event) => event.scannerId === scanner.id) : []),
+    [preview.library.history, scanner],
   )
   const errors = useMemo(
     () =>
@@ -106,19 +107,31 @@ export function ScannerDetailPage({
   }
 
   const meta = marketMeta(scanner.market)
-  const runConfirm = () => {
+  const isUser = preview.library.installed.some((r) => r.scannerId === scanner.id)
+
+  const runConfirm = async () => {
     if (!confirm) return
     setBusy(true)
-    window.setTimeout(() => {
+    try {
       if (confirm === "uninstall") {
-        previewActions.setScannerEnabled(scanner.id, false)
-        toast.success(`${scanner.name} uninstalled`, "Preview only — the engine config is untouched.")
+        if (isUser) {
+          await libraryActions.uninstall(scanner.id)
+          preview.refresh()
+          toast.success(`${scanner.name} moved to the recycle bin`, "Restore it any time from the Recycle bin.")
+        } else {
+          await libraryActions.setEnabled(scanner.id, false)
+          setOverrides((o) => ({ ...o, [scanner.id]: false }))
+          toast.info(`${scanner.name} disabled`, "Built-in scanners can't be deleted — this disables it. Restart to apply.")
+        }
       } else {
-        toast.success(`${scanner.name} restart requested`, "Picked up on the next engine cycle.")
+        toast.info(`${scanner.name} restart requested`, "Restart the engine to reload scanner configuration.")
       }
+    } catch (error) {
+      toast.error("Action failed", error instanceof Error ? error.message : String(error))
+    } finally {
       setBusy(false)
       setConfirm(null)
-    }, 700)
+    }
   }
 
   return (
@@ -144,12 +157,14 @@ export function ScannerDetailPage({
               <Switch
                 checked={scanner.enabled}
                 onChange={(next) => {
-                  previewActions.setScannerEnabled(scanner.id, next)
-                  toast.push({
-                    tone: next ? "success" : "info",
-                    title: `${scanner.name} ${next ? "enabled" : "disabled"}`,
-                    description: "Preview layer only.",
-                  })
+                  setOverrides((o) => ({ ...o, [scanner.id]: next }))
+                  libraryActions
+                    .setEnabled(scanner.id, next)
+                    .then(() => toast.success(`${scanner.name} ${next ? "enabled" : "disabled"}`, "Restart to apply."))
+                    .catch((error: unknown) => {
+                      setOverrides((o) => ({ ...o, [scanner.id]: !next }))
+                      toast.error("Failed", error instanceof Error ? error.message : String(error))
+                    })
                 }}
                 label="Toggle scanner"
               />
@@ -371,48 +386,37 @@ export function ScannerDetailPage({
 
           <Card>
             <CardHeader
-              title="Version history"
-              subtitle="Uploads for this scanner"
-              right={<PreviewChip label="Sample" />}
+              title="Scanner library events"
+              subtitle="Install, delete and restore activity for this scanner"
             />
             <div className="space-y-2 px-4 pb-4">
               {versions.length === 0 ? (
                 <EmptyState
                   icon={<History className="h-4 w-4" />}
-                  title="No upload records"
+                  title="No library events"
                   description="This scanner was discovered from the bundle on disk, not through the installer."
                 />
               ) : (
-                versions.map((version, index) => (
-                  <div key={version.id} className="rounded-xl border border-line-soft bg-surface-2 px-3 py-2">
+                versions.map((event, index) => (
+                  <div key={`${event.at}-${index}`} className="rounded-xl border border-line-soft bg-surface-2 px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
-                        <span className="tabnum text-[11.5px] font-medium text-ink">v{version.version}</span>
-                        {index === 0 ? <Badge tone="up">current</Badge> : null}
+                        <span className="tabnum text-[11.5px] font-medium text-ink">
+                          {event.version ? `v${event.version}` : event.action}
+                        </span>
                       </div>
-                      <Badge tone={version.status === "failed" ? "down" : version.status === "superseded" ? "neutral" : "info"}>
-                        {version.status}
+                      <Badge tone={event.action === "uninstall" ? "warn" : event.action === "install" ? "up" : "neutral"}>
+                        {event.action}
                       </Badge>
                     </div>
                     <div className="mt-0.5 flex items-center gap-1 text-[10px] text-faint">
                       <CalendarClock className="h-2.5 w-2.5" />
-                      {relTime(version.uploadedAt)}
+                      {relTime(event.at)}
                     </div>
-                    <ul className="mt-1.5 space-y-0.5">
-                      {version.changes.slice(0, 3).map((change) => (
-                        <li key={change} className="text-[10.5px] leading-relaxed text-dim">
-                          · {change}
-                        </li>
-                      ))}
-                    </ul>
+                    {event.detail ? <p className="mt-1 text-[10.5px] leading-relaxed text-dim">{event.detail}</p> : null}
                   </div>
                 ))
               )}
-              {versions.length ? (
-                <div className="rounded-xl border border-line-soft bg-surface-2 px-3 py-2 text-[10.5px] text-faint">
-                  Compatibility: <span className="text-dim">{versions[0].compatibility}</span>
-                </div>
-              ) : null}
             </div>
           </Card>
 
@@ -448,13 +452,21 @@ export function ScannerDetailPage({
       <ConfirmDialog
         open={confirm !== null}
         busy={busy}
-        title={confirm === "uninstall" ? `Uninstall ${scanner.name}?` : `Restart ${scanner.name}?`}
+        title={
+          confirm === "uninstall"
+            ? isUser
+              ? `Uninstall ${scanner.name}?`
+              : `Disable ${scanner.name}?`
+            : `Restart ${scanner.name}?`
+        }
         description={
           confirm === "uninstall"
-            ? "The scanner stops producing signals. Its history stays available in Signal History."
-            : "The process is recycled on the next engine cycle; open positions are unaffected."
+            ? isUser
+              ? "The scanner is moved to the recycle bin and stops producing signals. Its history stays available and you can restore it."
+              : "Built-in scanners can't be deleted — this disables it in markets.yaml (applied on restart). Its history stays available."
+            : "Restart the engine to reload scanner configuration; open positions are unaffected."
         }
-        confirmLabel={confirm === "uninstall" ? "Uninstall" : "Restart"}
+        confirmLabel={confirm === "uninstall" ? (isUser ? "Move to recycle bin" : "Disable") : "Restart"}
         tone={confirm === "uninstall" ? "danger" : "primary"}
         onConfirm={runConfirm}
         onCancel={() => setConfirm(null)}
