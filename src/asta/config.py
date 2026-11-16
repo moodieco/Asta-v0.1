@@ -85,11 +85,18 @@ class LoggingSettings(BaseModel):
 
 
 class WebSettings(BaseModel):
-    """Local dashboard listener. Loopback by default - the API has no auth."""
+    """Local dashboard listener.
+
+    ``host`` is the address shown in URLs; ``bind`` is the address the socket
+    actually listens on. ``bind: 0.0.0.0`` lets other devices on the LAN reach
+    the dashboard — those remote requests are gated by the share tokens (see
+    ``asta.web.share``), while loopback stays open for the machine owner.
+    """
 
     host: str = "127.0.0.1"
     port: int = 4310
     open_browser: bool = True
+    bind: str = "127.0.0.1"
 
     @field_validator("port")
     @classmethod
@@ -105,6 +112,14 @@ class WebSettings(BaseModel):
         if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
             raise ValueError("web.host must be a loopback address or 0.0.0.0")
         return host
+
+    @field_validator("bind")
+    @classmethod
+    def _known_bind(cls, value: str) -> str:
+        bind = str(value).strip() or "127.0.0.1"
+        if bind not in ("127.0.0.1", "0.0.0.0"):
+            raise ValueError("web.bind must be '127.0.0.1' or '0.0.0.0'")
+        return bind
 
 
 class SetupSettings(BaseModel):
@@ -162,7 +177,15 @@ class AstaConfig(BaseModel):
 
     def resolve_path(self, value: str) -> Path:
         path = Path(value).expanduser()
-        return path if path.is_absolute() else self.project_root / path
+        if path.is_absolute():
+            return path
+        # Hosted deploys mount a volume outside the checkout; ``data/...`` then
+        # resolves under ASTA_DATA_DIR so history, scanner library and the alert
+        # log survive a redeploy.
+        data_root = (os.environ.get("ASTA_DATA_DIR") or "").strip()
+        if data_root and path.parts and path.parts[0] == "data":
+            return Path(data_root).expanduser() / Path(*path.parts[1:])
+        return self.project_root / path
 
     def market_settings(self) -> Dict[str, MarketSettings]:
         return dict(self.markets)

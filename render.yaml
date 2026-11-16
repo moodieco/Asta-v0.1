@@ -1,0 +1,63 @@
+# Render blueprint for ASTA — one web service, built from the Dockerfile.
+#
+# Deploy: push this repo to GitHub, then Render → New → Blueprint → pick the
+# repo. Render reads this file, asks for the `sync: false` values, and builds.
+#
+# Plan notes:
+#   * `starter` is the cheapest plan that supports a persistent disk and does
+#     not spin down. On `free` the service sleeps after ~15 min idle, which
+#     stops the scanner loop and drops every signal produced while asleep.
+#   * Delete the `disk:` block and the ASTA_DATA_DIR var if you stay on free —
+#     history/scanner library then reset on every deploy.
+services:
+  - type: web
+    name: asta
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    region: singapore
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      # Share links. Set these to long random strings (openssl rand -hex 24)
+      # so the same URLs survive redeploys.
+      - key: ASTA_EDITOR_TOKEN
+        sync: false
+      - key: ASTA_VIEWER_TOKEN
+        sync: false
+
+      # Runtime state on the mounted volume (see disk: below).
+      - key: ASTA_DATA_DIR
+        value: /var/data
+      # The deploy is configured by committed config + these env vars, so skip
+      # the first-run setup wizard.
+      - key: ASTA_SETUP_COMPLETE
+        value: "1"
+
+      - key: ASTA_LOG_FORMAT
+        value: json
+      - key: ASTA_LOG_LEVEL
+        value: INFO
+
+      # Discord delivery. Leave unset to run the scanner without alerts.
+      - key: DISCORD_WEBHOOK_CRYPTO
+        sync: false
+      - key: DISCORD_WEBHOOK_STOCK
+        sync: false
+      - key: DISCORD_WEBHOOK_FOREX
+        sync: false
+
+      # Forex needs a reachable MT5 MCP endpoint. There is no MT5 terminal on
+      # Render, so leave forex disabled in config/markets.yaml (or point these
+      # at an OANDA-backed setup instead).
+      - key: MT5_TERMINAL_URL
+        sync: false
+      - key: MT5_TERMINAL_TOKEN
+        sync: false
+
+    disk:
+      name: asta-data
+      mountPath: /var/data
+      sizeGB: 1

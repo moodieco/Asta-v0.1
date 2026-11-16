@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from asta.config import load_config
@@ -91,6 +93,21 @@ def test_merges_four_files_and_expands_env(tmp_path, monkeypatch):
     assert config.project_root == tmp_path
     assert config.web.host == "127.0.0.1"
     assert config.web.port == 4310
+
+
+def test_data_dir_env_relocates_runtime_paths(tmp_path, monkeypatch):
+    """A mounted volume (Render disk) holds history/scanners instead of the checkout."""
+    monkeypatch.setenv("SIGNALS_PATH", str(tmp_path / "signals.jsonl"))
+    monkeypatch.setenv("STORAGE_BACKEND", "jsonl")
+    monkeypatch.setenv("OANDA_API_TOKEN", "tok-123")
+    monkeypatch.setenv("ASTA_DATA_DIR", str(tmp_path / "volume"))
+    directory = write_config_dir(tmp_path)
+
+    config = load_config(str(directory), env_file=tmp_path / "missing.env")
+
+    assert config.resolve_path("data/history/asta.db") == tmp_path / "volume" / "history" / "asta.db"
+    assert config.resolve_path("config/app.yaml") == tmp_path / "config" / "app.yaml"
+    assert config.resolve_path("/tmp/absolute.db") == Path("/tmp/absolute.db")
 
 
 def test_missing_config_dir_raises(tmp_path):

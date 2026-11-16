@@ -2,13 +2,19 @@
 
 The dashboard is served by `asta serve` on `127.0.0.1:4310` (see `config/app.yaml` →
 `web:`). One process runs the scanner (asyncio loop, main thread) and this HTTP
-server (socket thread). **The API is read-only and unauthenticated** — it binds
-loopback only; never set `web.host: 0.0.0.0` on a shared machine.
+server (socket thread). Loopback access is open; when `web.bind: 0.0.0.0` (the
+default) the dashboard is reachable from the LAN and every non-loopback request
+must present a share token (editor or view-only) issued at `/api/share`.
 
-Every endpoint opens its own SQLite connection in `mode=ro`, so a browser poll can
-never block the scanner's writer (WAL is enabled).
+Reads are SQLite `mode=ro` connections, so a browser poll can never block the
+scanner's writer (WAL is enabled). Writes (scanner install / uninstall / restore /
+test alert) touch the scanner library on disk, not the signal database.
 
 ## Endpoints
+
+`GET /healthz` is the one **unauthenticated** path: `200 {"ok": true}`. Hosting
+platforms (Render, Fly, k8s) must be able to probe liveness without a share
+token, and it returns no data.
 
 | Method | Path | Returns |
 |---|---|---|
@@ -20,6 +26,23 @@ never block the scanner's writer (WAL is enabled).
 | GET | `/api/system` | live process metrics: `uptimeSeconds`, `cpuPct` (sampled), `rssBytes`, `loadAvg`, `threads`, `database{path,sizeBytes,available,signals}`, `logs{path,errors,warnings,recent[]}`, `scanners{total,enabled}`, `cycles`, `lastCycleAt`, `web` |
 | GET | `/api/signals` | `{meta, signals[], total, offset, hasMore, generatedAt}` |
 | GET | `/api/signals/<id\|signal_id>` | one signal (404 when absent) |
+| GET | `/api/access` | `{access}` — `editor` or `viewer` (drives read-only UI) |
+| GET | `/api/scanners/library` | `{available, installed[], trash[], history[], root, trashRoot}` |
+| GET | `/api/alerts/log` | `{entries[]}` — recorded test/sample deliveries |
+| GET | `/api/share` | `{enabled, editorUrl, viewUrl, editorToken, viewerToken, lanIps}` |
+
+### Write endpoints (editor token / loopback only — viewers get 403)
+
+| Method | Path | Body → effect |
+|---|---|---|
+| POST | `/api/scanners/install` | `{name, market, version, source, sourceName, timeframes, description, dependencies, sha256}` → writes the bundle into `data/scanners/<market>/<id>/` and returns its manifest |
+| POST | `/api/scanners/<id>/uninstall` | `{reason}` → moves the folder to `data/scanners/.trash/<id>/` |
+| POST | `/api/scanners/<id>/restore` | — → moves it back out of the recycle bin |
+| POST | `/api/scanners/<id>/purge` | — → permanently deletes it from the recycle bin |
+| POST | `/api/scanners/<id>/set-enabled` | `{enabled}` → writes the scanner's `enabled` (user scanner `config.yaml`, or `markets.yaml` for built-ins; restart to apply) |
+| POST | `/api/alerts/test` | `{market?}` → sends a labelled test to every configured webhook (or one) and records the result |
+| POST | `/api/alerts/sample` | `{market?}` → sends a labelled sample signal card |
+| POST | `/api/share/regenerate` | — → rotates both share tokens |
 
 ### `/api/signals` query parameters
 

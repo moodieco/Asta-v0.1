@@ -26,12 +26,34 @@ providers ──► data_service ──► scanners ──► signal_manager ─
 | Tooling: CLI, 5 scripts, CI (tests + lint) | done |
 | Tests | see `pytest -q` |
 
+## Share and run 24/7
+
+| Goal | Command |
+|---|---|
+| Stable public HTTPS (no domain, free) | `./scripts/share-tailscale.sh` → `https://<machine>.<tailnet>.ts.net` |
+| Random public URL (dies on restart) | `./scripts/share.sh` (cloudflared quick tunnel) |
+| Run as a background service | `./deploy/install.sh` (macOS/Linux) · `deploy\windows\install-service.ps1` |
+
+Runbooks: [`docs/TAILSCALE.md`](docs/TAILSCALE.md) · [`deploy/README.md`](deploy/README.md) (macOS/Windows/Linux matrix).
+
+## Deploy (Render)
+
+`Dockerfile` + `render.yaml` build the dashboard and run the scanner in one
+service. Push to GitHub, then Render → **New → Blueprint**. Full checklist,
+env vars and caveats: [`docs/DEPLOY_RENDER.md`](docs/DEPLOY_RENDER.md).
+
+## Install
+
+Panduan lengkap dari nol (clone → dashboard → link HTTPS stabil):
+[`docs/INSTALL.md`](docs/INSTALL.md).
+
 ## Quickstart (Bahasa Indonesia)
 
 ```bash
 cd ~/Projects/asta-v0.1
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-cp .env.example .env                 # webhook Discord (+ token OANDA kalau dipakai)
+cp .env.example .env                 # webhook Discord + ASTA_EDITOR_TOKEN/VIEWER_TOKEN
+cd web && npm ci && npm run build && cd ..   # dashboard bundle (web/dist, tidak di-commit)
 .venv/bin/asta --health              # provider, storage, webhook
 .venv/bin/asta --once --dry-run      # satu siklus, tidak kirim ke Discord
 .venv/bin/asta serve                 # scanner + dashboard (browser terbuka otomatis)

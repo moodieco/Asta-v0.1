@@ -11,6 +11,7 @@ dist/
 .DS_Store
 
 # runtime data
+config/setup_state.json
 data/cache/*
 !data/cache/.gitkeep
 data/history/*
@@ -18,6 +19,11 @@ data/history/*
 data/logs/*
 !data/logs/.gitkeep
 *.log
+
+# user scanner library, share tokens, alert delivery log
+data/scanners/
+data/alerts/
+data/share.json
 
 # google credentials
 *service-account*.json
