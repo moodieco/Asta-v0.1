@@ -1,0 +1,27 @@
+id: FXS003_ASIA_RANGE_BREAKOUT
+name: Asia Range Breakout
+market: forex
+timeframe: 1h
+enabled: true
+symbols: []          # empty -> market default symbols; markets.yaml narrows this to USD_JPY
+description: >
+  ICT AMD shape on the Asian session. Range = 19:00-00:00 New York.
+  A close through either edge triggers the signal, the opposite edge is the
+  stop, and no new breaks are taken after 13:30 New York. The losing side is
+  never alerted, which is how the OCO order is represented.
+params:
+  session_start: "19:00"
+  session_end: "00:00"
+  cutoff: "13:30"
+  buffer_pct: 0.0
+  min_range_atr: 0.35
+  max_range_atr: 2.5
+  max_distance_atr: 1.2
+  require_sweep: false
+  atr_period: 14
+  reward_ratio: 2.0
+  min_confidence: 0.55
+  min_risk_pct: 0.02
+  max_risk_pct: 2.0
+  max_bars: 13
+  min_candles: 60

@@ -29,8 +29,8 @@ Instructions for AI coding agents and humans working in this repository.
 
 | You are adding… | Put it in |
 |---|---|
-| Strategy logic shared by markets | `markets/strategies/` |
-| Market-tuned defaults | `markets/<market>/strategies/` |
+| Strategy logic shared by markets | `markets/strategies/<name>.py` |
+| Market-tuned defaults | `markets/strategies/<market>_<name>.py` (same folder, market prefix) |
 | Indicator maths used by several markets | `core/indicators/` |
 | Market-specific indicator helper (sessions, gaps, percentile) | `markets/<market>/indicators/` |
 | New provider / broker | `providers/<market>/<broker>/` (`client.py` + `candles.py`) |

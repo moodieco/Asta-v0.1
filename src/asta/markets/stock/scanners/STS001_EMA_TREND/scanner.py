@@ -5,7 +5,7 @@ from typing import List
 from asta.core.scanner_base import ScannerBase
 from asta.core.scanner_registry import register_scanner
 from asta.core.signal_model import Market, ScanContext, Signal
-from asta.markets.stock.strategies.ema_trend import StockEMATrendStrategy
+from asta.markets.strategies.stock_ema_trend import StockEMATrendStrategy
 
 
 @register_scanner

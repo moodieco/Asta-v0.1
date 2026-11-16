@@ -5,7 +5,7 @@ from typing import List
 from asta.core.scanner_base import ScannerBase
 from asta.core.scanner_registry import register_scanner
 from asta.core.signal_model import Market, ScanContext, Signal
-from asta.markets.forex.strategies.rsi_divergence import ForexRSIDivergenceStrategy
+from asta.markets.strategies.forex_rsi_divergence import ForexRSIDivergenceStrategy
 
 
 @register_scanner

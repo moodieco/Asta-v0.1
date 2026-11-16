@@ -19,7 +19,7 @@ ID convention: `FXS###` forex, `CXS###` crypto, `STS###` stock, upper snake case
 Put the logic in a strategy class so it is testable without a scanner:
 
 ```python
-# markets/strategies/my_setup.py  (shared) or markets/<market>/strategies/my_setup.py (tuned)
+# markets/strategies/my_setup.py  (generic) + markets/strategies/<market>_my_setup.py (tuned)
 from asta.core.strategy import Strategy, StrategyResult
 from asta.core.indicators import ema, rsi_series
 
@@ -49,7 +49,7 @@ Rules: no IO, no Discord, no config reads; return `[]` when there is nothing to 
 from asta.core.scanner_base import ScannerBase
 from asta.core.scanner_registry import register_scanner
 from asta.core.signal_model import Market, ScanContext, Signal
-from asta.markets.crypto.strategies.my_setup import CryptoMySetupStrategy
+from asta.markets.strategies.crypto_my_setup import CryptoMySetupStrategy
 
 @register_scanner
 class MySetupScanner(ScannerBase):

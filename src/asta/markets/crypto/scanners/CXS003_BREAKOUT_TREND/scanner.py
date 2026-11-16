@@ -5,7 +5,7 @@ from typing import List
 from asta.core.scanner_base import ScannerBase
 from asta.core.scanner_registry import register_scanner
 from asta.core.signal_model import Market, ScanContext, Signal
-from asta.markets.crypto.strategies.breakout_trend import CryptoBreakoutTrendStrategy
+from asta.markets.strategies.crypto_breakout_trend import CryptoBreakoutTrendStrategy
 
 
 @register_scanner
