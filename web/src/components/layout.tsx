@@ -7,6 +7,7 @@ import {
   CloudUpload,
   History,
   LayoutDashboard,
+  LogOut,
   Menu,
   Moon,
   PackageCheck,
@@ -245,6 +246,7 @@ export function Topbar({
   showMenu,
   onShare,
   viewOnly = false,
+  onSignOut,
 }: {
   title: string
   crumbs?: string[]
@@ -256,6 +258,7 @@ export function Topbar({
   showMenu: boolean
   onShare?: () => void
   viewOnly?: boolean
+  onSignOut?: () => void
 }) {
   const { theme, toggle } = useTheme()
   const dark = theme === "dark"
@@ -297,6 +300,11 @@ export function Topbar({
             <Share2 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Share</span>
           </Button>
+        ) : null}
+        {onSignOut ? (
+          <IconButton label="Sign out" onClick={onSignOut}>
+            <LogOut className="h-3.5 w-3.5" />
+          </IconButton>
         ) : null}
         <Button variant="secondary" onClick={onRefresh} className="gap-1.5">
           <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
