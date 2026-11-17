@@ -61,3 +61,17 @@ scanner_overrides:
   STS002_BREAKOUT_TREND:
     enabled: true
     timeframe: 1d
+  STS003_IDX_LIQUIDITY:       # BPJS SCANNER - IHSG intraday screen
+    enabled: true
+    timeframe: 5m
+    # symbols stay empty on purpose: the scanner uses the shipped IDX universe
+    # (955 issuers) and rotates through it `batch_size` at a time.
+    params:
+      batch_size: 120         # 955 tickers -> one full sweep every 8 cycles (~20m)
+      session_start: "09:30"  # WIB, first pass of the day
+      session_end: "15:45"    # WIB, time exit before the close
+      min_price: 100
+      min_volume: 1000000     # shares traded today
+      min_value: 1000000000   # IDR traded today
+      stop_pct: 0.02
+      take_profit_pct: 0.05
