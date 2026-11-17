@@ -36,3 +36,7 @@ web/node_modules/
 
 # macOS launcher bundle (built by packaging/build_macos_app.sh)
 ASTA.app/
+
+# stockbit-mcp sidecar (third-party Node build + its transport token)
+third_party/stockbit-mcp/
+third_party/.stockbit-mcp-token
