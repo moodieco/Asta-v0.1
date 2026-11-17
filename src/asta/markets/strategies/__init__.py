@@ -20,9 +20,11 @@ from asta.markets.strategies.ema_crossover import EMACrossoverStrategy
 from asta.markets.strategies.forex_asia_range_breakout import ForexAsiaRangeBreakoutStrategy
 from asta.markets.strategies.forex_ema_crossover import ForexEMACrossoverStrategy
 from asta.markets.strategies.forex_rsi_divergence import ForexRSIDivergenceStrategy
+from asta.markets.strategies.liquidity_momentum import LiquidityMomentumStrategy
 from asta.markets.strategies.rsi_divergence import RSIDivergenceStrategy
 from asta.markets.strategies.stock_breakout_trend import StockBreakoutTrendStrategy
 from asta.markets.strategies.stock_ema_trend import StockEMATrendStrategy
+from asta.markets.strategies.stock_liquidity_momentum import StockLiquidityMomentumStrategy
 from asta.markets.strategies.volume_spike import VolumeSpikeStrategy
 
 __all__ = [
@@ -36,8 +38,10 @@ __all__ = [
     "ForexAsiaRangeBreakoutStrategy",
     "ForexEMACrossoverStrategy",
     "ForexRSIDivergenceStrategy",
+    "LiquidityMomentumStrategy",
     "RSIDivergenceStrategy",
     "StockBreakoutTrendStrategy",
     "StockEMATrendStrategy",
+    "StockLiquidityMomentumStrategy",
     "VolumeSpikeStrategy",
 ]
