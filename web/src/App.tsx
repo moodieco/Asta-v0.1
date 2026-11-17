@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { CircleDot } from "lucide-react"
-import { useAppData } from "@/lib/api"
+import { fetchSession, logoutSession, useAppData, type SessionInfo } from "@/lib/api"
 import { useRoute } from "@/lib/router"
 import type { CustomRange, Range } from "@/lib/range"
 import { useLibrary } from "@/lib/library"
@@ -19,6 +19,7 @@ import { RecycleBinPage } from "@/pages/RecycleBin"
 import { SystemMonitorPage } from "@/pages/SystemMonitor"
 import { SettingsPage } from "@/pages/Settings"
 import { SetupPage } from "@/pages/Setup"
+import { LoginPage } from "@/pages/Login"
 import { SignalsPage } from "@/pages/Signals"
 
 const TITLES: Record<string, string> = {
@@ -33,24 +34,81 @@ const TITLES: Record<string, string> = {
   setup: "Setup",
 }
 
+/* Skipping the wizard must stick: without this the gate below drags the user
+ * straight back to /setup and the dashboard becomes unreachable. */
+const SKIP_KEY = "asta.setup.skipped.v1"
+
+function readSkip(): boolean {
+  try {
+    return window.localStorage.getItem(SKIP_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function writeSkip(skipped: boolean): void {
+  try {
+    if (skipped) window.localStorage.setItem(SKIP_KEY, "1")
+    else window.localStorage.removeItem(SKIP_KEY)
+  } catch {
+    /* private mode: the gate simply stays strict for this session */
+  }
+}
+
 export default function App() {
   const data = useAppData()
   const route = useRoute()
-  const { access } = useLibrary()
+  const { access, refresh: refreshAccess } = useLibrary()
   const [range, setRange] = useState<Range>("all")
   const [custom, setCustom] = useState<CustomRange | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [setupSkipped, setSetupSkipped] = useState(readSkip)
+  const [session, setSession] = useState<SessionInfo | null>(null)
+  const [sessionState, setSessionState] = useState<"loading" | "ready" | "offline">("loading")
+
+  const loadSession = () => {
+    setSessionState("loading")
+    fetchSession()
+      .then((next) => {
+        setSession(next)
+        setSessionState("ready")
+      })
+      .catch(() => {
+        setSession(null)
+        setSessionState("offline")
+      })
+  }
+
+  useEffect(() => {
+    loadSession()
+  }, [])
 
   const root = route.segments[0] ?? "overview"
   const isTrash = root === "scanners" && route.segments[1] === "trash"
 
-  /* Setup gate: an unconfigured engine opens the wizard first. */
+  /* Setup gate: an unconfigured engine opens the wizard first — once.
+   * "Skip to dashboard" and a completed setup both release it, otherwise the
+   * redirect fights the user and every route snaps back to /setup. */
   useEffect(() => {
     if (!data.setup?.available) return
-    if (!data.setup.complete && root !== "setup") route.navigate("/setup", { replace: true })
-  }, [data.setup, root, route])
+    if (data.setup.complete) {
+      if (setupSkipped) {
+        writeSkip(false)
+        setSetupSkipped(false)
+      }
+      return
+    }
+    if (setupSkipped) return
+    if (root !== "setup") route.navigate("/setup", { replace: true })
+  }, [data.setup, root, route, setupSkipped])
+
+  const skipSetup = () => {
+    writeSkip(true)
+    setSetupSkipped(true)
+    route.navigate("/overview")
+  }
 
   useEffect(() => {
     const title = TITLES[root] ?? "ASTA"
@@ -94,6 +152,40 @@ export default function App() {
       ? scanners.find((row) => row.id.toLowerCase() === route.segments[1].toLowerCase())?.name ?? "Scanner detail"
       : TITLES[root] ?? "ASTA"
 
+  const signOut = () => {
+    /* Wait for the cookie to be cleared before asking who we are — otherwise
+     * the next /api/session still sees the old session and nothing changes. */
+    logoutSession()
+      .catch(() => undefined)
+      .finally(() => loadSession())
+  }
+
+  /* No credential yet: the role + PIN screen replaces the shell entirely. */
+  if (sessionState === "loading") {
+    return <BootScreen title="ASTA" note="Checking your session…" />
+  }
+  if (sessionState === "offline") {
+    return (
+      <BootScreen
+        title="ASTA is not answering"
+        note="The dashboard could not reach the engine. Start it with `asta serve` and try again."
+        onRetry={loadSession}
+      />
+    )
+  }
+  if (session && !session.authenticated) {
+    return (
+      <LoginPage
+        session={session}
+        onAuthed={(role) => {
+          setSession((current) => (current ? { ...current, authenticated: true, role } : current))
+          data.refresh()
+          refreshAccess()
+        }}
+      />
+    )
+  }
+
   return (
     <ToastProvider>
       <div className="flex min-h-screen">
@@ -126,6 +218,7 @@ export default function App() {
             showMenu
             onShare={access === "editor" ? () => setShareOpen(true) : undefined}
             viewOnly={access === "viewer"}
+            onSignOut={session && !session.loopback ? signOut : undefined}
           />
 
           <main className="min-w-0 flex-1 px-3 pb-8 pt-4 sm:px-5">
@@ -158,7 +251,7 @@ export default function App() {
                 {root === "uploads" ? <UploadHistoryPage data={data} navigate={route.navigate} /> : null}
                 {root === "alerts" ? <AlertsPage data={data} /> : null}
                 {root === "settings" ? <SettingsPage data={data} navigate={route.navigate} /> : null}
-                {root === "setup" ? <SetupPage data={data} navigate={route.navigate} /> : null}
+                {root === "setup" ? <SetupPage data={data} navigate={route.navigate} onSkip={skipSetup} /> : null}
                 {!TITLES[root] ? <NotFound onHome={() => route.navigate("/overview")} /> : null}
               </>
             )}
@@ -182,6 +275,40 @@ export default function App() {
 
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
     </ToastProvider>
+  )
+}
+
+function BootScreen({
+  title,
+  note,
+  onRetry,
+}: {
+  title: string
+  note: string
+  onRetry?: () => void
+}) {
+  return (
+    <div className="grid min-h-screen place-items-center px-6">
+      <div className="w-full max-w-sm text-center">
+        <div className="mx-auto mb-3 grid h-9 w-9 place-items-center rounded-xl bg-info text-[13px] font-bold text-white">
+          A
+        </div>
+        <div className="text-[13px] font-semibold text-ink">{title}</div>
+        <p className="mt-1 text-[11.5px] leading-relaxed text-faint">{note}</p>
+        {onRetry ? (
+          <button
+            onClick={onRetry}
+            className="mt-3 cursor-pointer rounded-lg border border-line bg-surface px-3 py-1.5 text-[11.5px] font-medium text-dim hover:text-ink"
+          >
+            Try again
+          </button>
+        ) : (
+          <div className="mx-auto mt-3 h-1 w-24 overflow-hidden rounded-full bg-surface-3">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-info/70" />
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
