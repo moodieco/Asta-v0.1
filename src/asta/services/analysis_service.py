@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import List, Optional
+from typing import Iterable, List, Optional, cast
 
 from asta.core.event_bus import EventBus
 from asta.core.scanner_manager import CycleReport, ScannerManager
@@ -58,6 +58,12 @@ class AnalysisService:
             symbols = scanner.symbols or self.data.symbols(scanner.market)
             if not symbols:
                 report.errors.append("{}: no symbols configured".format(scanner.id))
+                continue
+            # Large universes are scanned in rotating slices (see ScannerBase).
+            picker = getattr(scanner, "pick_symbols", None)
+            if callable(picker):
+                symbols = list(cast("Iterable[str]", picker(symbols)))
+            if not symbols:
                 continue
             report.scanners_run += 1
 
