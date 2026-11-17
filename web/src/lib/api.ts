@@ -132,10 +132,12 @@ export interface SystemInfo {
 
 export class ApiError extends Error {
   status: number
-  constructor(message: string, status = 0) {
+  payload?: unknown
+  constructor(message: string, status = 0, payload?: unknown) {
     super(message)
     this.name = "ApiError"
     this.status = status
+    this.payload = payload
   }
 }
 
@@ -172,15 +174,52 @@ export async function apiSend<T>(path: string, method: "POST" | "DELETE" = "POST
   }
   if (!response.ok) {
     let detail: string = response.statusText
+    let parsed: { error?: string; detail?: string; retryAfter?: number } | undefined
     try {
-      const parsed = (await response.json()) as { error?: string; detail?: string }
+      parsed = (await response.json()) as { error?: string; detail?: string; retryAfter?: number }
       detail = parsed.error ?? parsed.detail ?? detail
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(`${method} ${path} → ${response.status} ${detail}`, response.status)
+    throw new ApiError(`${method} ${path} → ${response.status} ${detail}`, response.status, parsed)
   }
   return (await response.json()) as T
+}
+
+export interface SessionInfo {
+  authenticated: boolean
+  role: AccessLevel | null
+  loopback: boolean
+  pins: { viewer: boolean; editor: boolean }
+  sessionTtl: number
+  tokenRequired: boolean
+}
+
+/** Who am I? Public: the login screen needs it before any credential exists. */
+export async function fetchSession(): Promise<SessionInfo> {
+  return apiGet<SessionInfo>("/api/session")
+}
+
+/** Trade a role + PIN for a 12h HttpOnly session cookie. */
+export async function loginWithPin(role: "viewer" | "editor", pin: string): Promise<SessionInfo> {
+  return apiSend<SessionInfo>("/api/auth", "POST", { role, pin })
+}
+
+export async function logoutSession(): Promise<{ authenticated: boolean }> {
+  return apiSend("/api/auth/logout", "POST", {})
+}
+
+/**
+ * Mark setup as reviewed from inside the dashboard.
+ *
+ * Only the bookkeeping lives here (`setup_state.json`): `.env` and the YAML
+ * configs stay with `asta setup`, so the browser never writes a secret.
+ */
+export async function completeSetup(payload: Record<string, unknown> = {}): Promise<{
+  completed: boolean
+  setup?: SetupInfo
+}> {
+  return apiSend("/api/setup/complete", "POST", payload)
 }
 
 export async function fetchSignals(init?: RequestInit): Promise<Dataset> {
