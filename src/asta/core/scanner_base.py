@@ -116,6 +116,16 @@ class ScannerBase(ABC):
     def param(self, key: str, default: Any = None) -> Any:
         return self.params.get(key, default)
 
+    def pick_symbols(self, symbols: List[str], now: Optional[Any] = None) -> List[str]:
+        """Return the symbols this cycle should scan.
+
+        Default: everything. Scanners with a large universe override this to
+        rotate through it in batches - the cycle then only *fetches* the slice
+        it will actually evaluate, instead of paying an HTTP call per symbol and
+        discarding most of them.
+        """
+        return list(symbols)
+
     def describe(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -177,6 +187,7 @@ class ScannerBase(ABC):
                     price=result.price,
                     stop_loss=getattr(result, "stop_loss", None),
                     take_profit=getattr(result, "take_profit", None),
+                    expires_at=getattr(result, "expires_at", None),
                 )
             )
         return signals
@@ -192,6 +203,7 @@ class ScannerBase(ABC):
         price: Optional[float] = None,
         stop_loss: Optional[float] = None,
         take_profit: Optional[float] = None,
+        expires_at: Optional[Any] = None,
     ) -> Signal:
         entry = price if price is not None else context.price
         atr_value = atr(context.candles, int(self.params.get("atr_period", 14)))
@@ -204,7 +216,13 @@ class ScannerBase(ABC):
             take_profit=take_profit,
             last_timestamp=context.last_timestamp,
             timeframe=context.timeframe,
+            expires_at=expires_at,
         )
+        payload = dict(metadata or {})
+        # Opt-in per-scanner dedup window: a session screener alerts once per
+        # symbol per day, not once per candle.
+        if self.params.get("dedup_window_seconds") is not None:
+            payload.setdefault("dedup_window_seconds", int(self.params["dedup_window_seconds"]))
         return Signal(
             scanner_id=self.id,
             scanner_name=self.name or self.id,
@@ -218,7 +236,7 @@ class ScannerBase(ABC):
             timestamp=context.now or utcnow(),
             strategy=self.strategy or self.name,
             indicators={k: float(v) for k, v in (indicators or {}).items()},
-            metadata=dict(metadata or {}),
+            metadata=payload,
             stop_loss=levels.stop_loss if levels else None,
             take_profit=levels.take_profit if levels else None,
             risk_reward=levels.risk_reward if levels else None,
