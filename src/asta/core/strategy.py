@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from asta.core.signal_model import ScanContext, SignalType
@@ -26,6 +27,9 @@ class StrategyResult:
     #: the scanner falls back to ATR-based levels.
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
+    #: Session-based exit (e.g. "before the exchange closes"). Overrides the
+    #: bar-count expiry the scanner would otherwise derive from ``max_bars``.
+    expires_at: Optional[datetime] = None
 
 
 class Strategy(ABC):
