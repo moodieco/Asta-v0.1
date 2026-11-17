@@ -16,6 +16,25 @@ from asta.utils.logger import get_logger
 from asta.utils.time_utils import parse_datetime, timeframe_to_seconds, utcnow
 
 
+def dedup_window_hint(metadata) -> Optional[float]:
+    """Per-signal dedup window carried in ``metadata`` (opt-in, per scanner).
+
+    A session screener alerts once per symbol per day; a 5m candle scanner would
+    otherwise re-alert every two candles. Unparseable or non-positive values
+    fall back to the timeframe-derived window.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    raw = metadata.get("dedup_window_seconds")
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
 class DeduplicationStore:
     def __init__(self, window_seconds: int = 3600, cache: Optional[TTLCache] = None):
         self.max_window_seconds = int(window_seconds)
@@ -33,7 +52,11 @@ class DeduplicationStore:
         return self.cache.get(signal.dedup_key) is not None
 
     def register(self, signal: Signal, window_seconds: Optional[float] = None) -> None:
-        window = window_seconds if window_seconds is not None else self.window_for(signal.timeframe)
+        window = window_seconds
+        if window is None:
+            window = dedup_window_hint(getattr(signal, "metadata", None))
+        if window is None:
+            window = self.window_for(signal.timeframe)
         self.cache.set(signal.dedup_key, signal.signal_id, ttl=window)
 
     def check_and_register(self, signal: Signal) -> Tuple[bool, Optional[float]]:
@@ -70,7 +93,9 @@ class DeduplicationStore:
                 timestamp = parse_datetime(str(record["timestamp"]))
             except (KeyError, TypeError, ValueError):
                 continue
-            window = self.window_for(str(record.get("timeframe", "")))
+            window = dedup_window_hint(record.get("metadata")) or self.window_for(
+                str(record.get("timeframe", ""))
+            )
             remaining = window - (now - timestamp).total_seconds()
             if remaining > 0:
                 self.cache.set(key, record.get("signal_id", "warm"), ttl=remaining)
