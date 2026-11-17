@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from asta.storage.database import Database
-from asta.web.server import TOKEN_COOKIE, DashboardServer
+from asta.web.server import SESSION_COOKIE, TOKEN_COOKIE, DashboardServer
 from asta.web.share import ShareManager
 
 PROXY = {"X-Forwarded-For": "203.0.113.9", "X-Forwarded-Proto": "https"}
@@ -40,6 +40,8 @@ def server(db_path: Path, tmp_path: Path):
 
     share = ShareManager(tmp_path / "share.json")
     share.tokens()
+    share.set_pin("viewer", "555001")
+    share.set_pin("editor", "777003")
     instance = DashboardServer(
         db_path=db_path,
         web_dir=web_dir,
@@ -90,19 +92,21 @@ def test_proxy_header_alone_does_not_upgrade_to_editor(server) -> None:
     assert "HttpOnly" in cookie and "Secure" in cookie
 
 
-def test_token_url_sets_cookie_so_assets_load(server) -> None:
-    """The SPA asks for /assets/x.js without ?token=; the cookie must carry auth."""
+def test_spa_shell_is_public_but_the_api_is_not(server) -> None:
+    """The login screen has to render before the visitor owns any credential.
+
+    So the shell (index.html + assets) is public, while every /api/* call stays
+    gated until a cookie, a token or loopback frees it.
+    """
+    status, _, body = fetch(server.url, headers=PROXY)
+    assert status == 200 and "id='root'" in body.decode()
+    assert fetch(server.url + "assets/app.js", headers=PROXY)[0] == 200
+    assert fetch(server.url + "api/status", headers=PROXY)[0] == 401
+
     viewer = server.share.tokens()["viewer"]  # type: ignore[attr-defined]
-
-    status, headers, _ = fetch(server.url + "?token=" + viewer, headers=PROXY)
-    assert status == 200
-    assert "id='root'" in _.decode()
+    _, headers, _ = fetch(server.url + "?token=" + viewer, headers=PROXY)
     cookie = (headers.get("Set-Cookie") or "").split(";")[0]
-    assert cookie
-
     plain = dict(PROXY, Cookie=cookie)
-    assert fetch(server.url + "assets/app.js", headers=plain)[0] == 200
-    assert fetch(server.url + "assets/app.js", headers=PROXY)[0] == 401
     assert fetch(server.url + "api/status", headers=plain)[0] == 200
 
 
@@ -158,3 +162,101 @@ def test_editor_cookie_can_write(server) -> None:
         body={},
     )
     assert status == 200 and "tokens" in json.loads(body)
+
+
+# -- role + PIN login ------------------------------------------------------
+
+
+def test_session_endpoint_is_public_and_reports_which_pins_exist(server) -> None:
+    status, _, body = fetch(server.url + "api/session", headers=PROXY)
+    payload = json.loads(body)
+    assert status == 200
+    assert payload["authenticated"] is False
+    assert payload["role"] is None
+    assert payload["pins"] == {"viewer": True, "editor": True}
+
+
+def test_loopback_session_is_editor_without_a_pin(server) -> None:
+    status, _, body = fetch(server.url + "api/session")
+    payload = json.loads(body)
+    assert status == 200 and payload["authenticated"] is True
+    assert payload["role"] == "editor" and payload["loopback"] is True
+
+
+def test_pin_login_grants_the_role_and_sets_a_secure_cookie(server) -> None:
+    remote = {"X-Forwarded-For": "198.51.100.7", "X-Forwarded-Proto": "https"}
+    status, headers, body = fetch(
+        server.url + "api/auth", headers=remote, method="POST", body={"role": "viewer", "pin": "555001"}
+    )
+    assert status == 200 and json.loads(body)["role"] == "viewer"
+    raw_cookie = headers.get("Set-Cookie") or ""
+    assert raw_cookie.startswith(SESSION_COOKIE + "=")
+    assert "HttpOnly" in raw_cookie and "Secure" in raw_cookie and "SameSite=Lax" in raw_cookie
+    cookie = {"Cookie": raw_cookie.split(";")[0]}
+
+    # the session carries the viewer role onto the API
+    status, _, body = fetch(server.url + "api/access", headers=dict(remote, **cookie))
+    assert status == 200 and json.loads(body)["access"] == "viewer"
+    assert fetch(server.url + "api/status", headers=dict(remote, **cookie))[0] == 200
+
+    # ... and a viewer still cannot write, nor read the editor token
+    assert fetch(
+        server.url + "api/share/regenerate", headers=dict(remote, **cookie), method="POST", body={}
+    )[0] == 403
+    status, _, body = fetch(server.url + "api/share", headers=dict(remote, **cookie))
+    assert status == 200
+    payload = json.loads(body)
+    assert payload.get("tokens") is None and "editorToken" not in payload
+
+
+def test_pin_must_match_the_role_it_was_chosen_for(server) -> None:
+    remote = {"X-Forwarded-For": "198.51.100.8", "X-Forwarded-Proto": "https"}
+    status, _, body = fetch(
+        server.url + "api/auth", headers=remote, method="POST", body={"role": "editor", "pin": "555001"}
+    )
+    assert status == 401 and json.loads(body)["error"] == "invalid pin"
+
+
+def test_repeated_wrong_pins_lock_the_client_out(server) -> None:
+    remote = {"X-Forwarded-For": "198.51.100.9", "X-Forwarded-Proto": "https"}
+    for _ in range(5):
+        status, _, _ = fetch(
+            server.url + "api/auth", headers=remote, method="POST", body={"role": "editor", "pin": "000000"}
+        )
+        assert status == 401
+
+    status, _, body = fetch(
+        server.url + "api/auth", headers=remote, method="POST", body={"role": "editor", "pin": "777003"}
+    )
+    assert status == 429
+    assert json.loads(body)["retryAfter"] > 0
+
+
+def test_unknown_role_and_missing_pin_are_rejected(server) -> None:
+    remote = {"X-Forwarded-For": "198.51.100.10", "X-Forwarded-Proto": "https"}
+    status, _, _ = fetch(server.url + "api/auth", headers=remote, method="POST", body={"role": "admin", "pin": "1"})
+    assert status == 400
+
+    share = server.share  # type: ignore[attr-defined]
+    share.clear_pin("viewer")
+    status, _, body = fetch(
+        server.url + "api/auth", headers=remote, method="POST", body={"role": "viewer", "pin": "555001"}
+    )
+    assert status == 409 and "not configured" in json.loads(body)["error"]
+
+
+def test_logout_clears_the_session_cookie(server) -> None:
+    remote = {"X-Forwarded-For": "198.51.100.11", "X-Forwarded-Proto": "https"}
+    _, headers, _ = fetch(
+        server.url + "api/auth", headers=remote, method="POST", body={"role": "viewer", "pin": "555001"}
+    )
+    cookie = {"Cookie": (headers.get("Set-Cookie") or "").split(";")[0]}
+
+    status, headers, _ = fetch(
+        server.url + "api/auth/logout", headers=dict(remote, **cookie), method="POST", body={}
+    )
+    assert status == 200
+    cleared = headers.get("Set-Cookie") or ""
+    assert cleared.startswith(SESSION_COOKIE + "=") and "Max-Age=0" in cleared
+    # a cleared cookie means no access again
+    assert fetch(server.url + "api/status", headers=dict(remote, Cookie="asta_session="))[0] == 401
