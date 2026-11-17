@@ -78,6 +78,7 @@ class WebService:
             status_provider=self.status,
             config_summary=self.config_summary,
             setup_summary=self.setup_summary,
+            setup_complete_provider=self.complete_setup,
             system_snapshot=self.system_snapshot,
             scanner_library=self.library,
             alert_log=self.alert_log,
@@ -255,6 +256,72 @@ class WebService:
                 "root": str(self.root),
             },
         }
+
+    def complete_setup(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Record the in-dashboard wizard's answers in ``setup_state.json``.
+
+        The dashboard owns the *bookkeeping* only: secrets and the provider
+        wiring stay with ``asta setup``, so a web session can never rotate a
+        credential. What this writes is which steps were reviewed plus the
+        completion stamp, which is what the setup gate reads on every load.
+        """
+        config = self.app.config
+        state = SetupState.load(config.resolve_path(config.setup.state_path))
+        env = secrets.read_env(self.root / ".env")
+
+        port = payload.get("port")
+        if port not in (None, ""):
+            try:
+                port = int(str(port))
+            except (TypeError, ValueError) as exc:
+                raise ConfigurationError("dashboard port must be a number") from exc
+            if not 1 <= port <= 65535:
+                raise ConfigurationError("dashboard port must be between 1 and 65535")
+        else:
+            port = self.port
+
+        channels = config.discord.channels or {}
+        state.record_step(
+            "discord",
+            {
+                "configured": [
+                    market for market, channel in channels.items()
+                    if secrets.is_configured(env.get(getattr(channel, "env", ""), ""))
+                ]
+            },
+        )
+        state.record_step(
+            "providers",
+            {
+                market: str(settings.get("type", ""))
+                for market, settings in (config.providers or {}).items()
+                if isinstance(settings, dict)
+            },
+        )
+        enabled = [item["id"] for item in self._inventory() if item.get("enabled")]
+        state.record_step("scanners", {"enabled": sorted(enabled)})
+        state.record_step(
+            "system",
+            {
+                "port": port,
+                "host": self.host,
+                "database": str(config.resolve_path(config.storage.sqlite_path)),
+            },
+        )
+        state.record_step("review", {"validated": True, "source": "dashboard"})
+        state.mark_complete(
+            {
+                "webhooks": {
+                    market: secrets.mask(env.get(getattr(channel, "env", ""), ""))
+                    for market, channel in channels.items()
+                },
+                "port": port,
+                "scanners": len(enabled),
+                "source": "dashboard",
+            }
+        )
+        logger.info("setup completed from the dashboard", extra={"port": port, "scanners": len(enabled)})
+        return self.setup_summary()
 
     def _inventory(self) -> List[Dict[str, Any]]:
         try:
