@@ -29,7 +29,7 @@ from asta.bootstrap import AstaApp
 from asta.core.signal_model import Market
 from asta.utils.exceptions import AstaError
 
-COMMANDS = ("serve", "status", "setup", "launcher")
+COMMANDS = ("serve", "status", "setup", "launcher", "pins")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,8 +39,22 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         choices=COMMANDS,
-        help="serve = scanner + dashboard; status; setup; launcher",
+        help="serve = scanner + dashboard; status; setup; launcher; pins",
     )
+    parser.add_argument(
+        "action",
+        nargs="?",
+        default=None,
+        choices=("set", "status", "clear"),
+        help="pins only: set | status | clear (default status)",
+    )
+    parser.add_argument(
+        "--role",
+        default=None,
+        choices=("viewer", "editor"),
+        help="pins only: which role the PIN unlocks",
+    )
+    parser.add_argument("--pin", default=None, help="pins set only: the PIN itself")
     parser.add_argument("--config", default=None, help="config directory (default: config/)")
     parser.add_argument("--once", action="store_true", help="run a single scan cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="never post to Discord")
@@ -174,6 +188,53 @@ def _launcher(args: argparse.Namespace) -> int:
     return run_launcher(args.config, in_browser=bool(getattr(args, "browser", False)))
 
 
+def _pins(args: argparse.Namespace) -> int:
+    """Manage the role PINs the public dashboard asks for on the login screen."""
+    from asta.config import load_config
+    from asta.web.share import PIN_ROLES, SESSION_TTL, ShareManager
+
+    config = load_config(args.config, require=False)
+    path = config.resolve_path("data/share.json")
+    manager = ShareManager(path)
+    action = getattr(args, "action", None) or "status"
+    role = (getattr(args, "role", None) or "").strip().lower()
+
+    if action == "status":
+        print(
+            json.dumps(
+                {
+                    "path": str(path),
+                    "configured": manager.pins_configured(),
+                    "sessionTtlSeconds": SESSION_TTL,
+                    "sharedLinksStillWork": bool(manager.tokens()),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if role not in PIN_ROLES:
+        print("error: --role must be viewer or editor", file=sys.stderr)
+        return 2
+
+    if action == "clear":
+        removed = manager.clear_pin(role)
+        print(json.dumps({"role": role, "cleared": removed, "path": str(path)}, indent=2))
+        return 0
+
+    pin = getattr(args, "pin", None)
+    if not pin:
+        print("error: --pin is required (or pipe it through --pin)", file=sys.stderr)
+        return 2
+    try:
+        manager.set_pin(role, pin)
+    except ValueError as exc:
+        print("error: {}".format(exc), file=sys.stderr)
+        return 2
+    print(json.dumps({"role": role, "configured": True, "path": str(path)}, indent=2))
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -189,6 +250,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _setup(args)
     if args.command == "launcher":
         return _launcher(args)
+    if args.command == "pins":
+        return _pins(args)
 
     try:
         app = AstaApp.from_config(args.config, dry_run=True if args.dry_run else None)
