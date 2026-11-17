@@ -63,9 +63,36 @@ ASTA_VIEWER_TOKEN=<64 hex chars>
 If you leave the tokens empty, ASTA generates them once into `data/share.json`
 and you read them with `curl -s http://127.0.0.1:4310/api/share`.
 
+### Role + PIN access (recommended for public links)
+
+Opening the dashboard gives a role picker, then asks for that role's PIN. Each
+role has its own PIN, hashed in `data/share.json`; the PIN — not the picker —
+decides what the session may do:
+
+```bash
+asta pins set --role viewer --pin <6-digit pin>   # read-only, safe to share
+asta pins set --role editor --pin <8+ chars>      # can install scanners (runs code)
+asta pins status                                  # which roles have a PIN
+asta pins clear --role viewer                     # revoke a role (kills its sessions)
+```
+
+Sessions are an `HttpOnly; Secure; SameSite=Lax` cookie valid for 12 hours;
+rotating a PIN logs every existing session for that role out. Five wrong PINs
+per client lock that client out (60s, doubling to 15 min). The older
+`?token=` links keep working and skip the picker.
+
 **Forex:** needs a MetaTrader 5 terminal (`MT5_TERMINAL_URL`), which only exists on
 Windows. On macOS/Linux use OANDA (`providers.forex.type: oanda` + `OANDA_*`) or
 turn forex off in `config/markets.yaml` (`enabled: false`).
+
+**Stockbit MCP (optional, off by default):** nothing in this guide installs it,
+starts it, or points ASTA at it. Candles still come from Yahoo
+(`providers.stock.type: yahoo`); `stockbit` is not a selectable provider type, so
+`type: stockbit` fails at startup instead of half-working. If you want the IDX
+context tools (quote, orderbook, bandarmology, fundamentals) there is a separate
+opt-in path — Node 22+, clone into `third_party/stockbit-mcp`, one manual browser
+login, then `scripts/start_stockbit_mcp.sh` — documented in
+[`STOCKBIT_MCP.md`](STOCKBIT_MCP.md). Skip it and nothing changes.
 
 ## 3. Build the dashboard
 
