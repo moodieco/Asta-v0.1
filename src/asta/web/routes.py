@@ -33,6 +33,7 @@ class Routes:
         status_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         config_summary: Optional[Callable[[], Dict[str, Any]]] = None,
         setup_summary: Optional[Callable[[], Dict[str, Any]]] = None,
+        setup_complete_provider: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         system_snapshot: Optional[Callable[[], Dict[str, Any]]] = None,
         scanner_library: Optional[Any] = None,
         alert_log: Optional[Any] = None,
@@ -46,6 +47,7 @@ class Routes:
         self.status_provider = status_provider
         self.config_summary = config_summary
         self.setup_summary = setup_summary
+        self.setup_complete_provider = setup_complete_provider
         self.system_snapshot = system_snapshot
         self.scanner_library = scanner_library
         self.alert_log = alert_log
@@ -101,7 +103,7 @@ class Routes:
 
         # -- read-only endpoints -----------------------------------------
         if method == "GET":
-            return self._dispatch_get(path, params)
+            return self._dispatch_get(path, params, access)
 
         # -- write endpoints ----------------------------------------------
         if method in WRITE_METHODS:
@@ -111,7 +113,9 @@ class Routes:
 
         return 405, {"error": "method not allowed", "method": method}
 
-    def _dispatch_get(self, path: str, params: Dict[str, list]) -> Response:
+    def _dispatch_get(
+        self, path: str, params: Dict[str, list], access: str = "editor"
+    ) -> Response:
         if path in ("/api/health", "/api/status"):
             return 200, self.health()
 
@@ -139,6 +143,10 @@ class Routes:
         if path == "/api/share":
             if self.share_provider is None:
                 return 200, {"enabled": False}
+            if access != "editor":
+                # A view-only session must not read the editor token and upgrade
+                # itself by copying it into the URL.
+                return 200, {"enabled": True, "tokens": None, "note": "share tokens are editor-only"}
             return 200, self.share_provider()
 
         if path == "/api/scanners/library":
@@ -246,6 +254,16 @@ class Routes:
                 return 200, {"results": results}
             except ConfigurationError as exc:
                 return 400, {"error": str(exc)}
+
+        # -- setup ---------------------------------------------------------
+        if path == "/api/setup/complete":
+            if self.setup_complete_provider is None:
+                return 503, {"error": "setup writes unavailable"}
+            try:
+                summary = self.setup_complete_provider(body or {})
+            except ConfigurationError as exc:
+                return 400, {"error": str(exc)}
+            return 200, {"completed": True, "setup": summary}
 
         # -- share ---------------------------------------------------------
         if path == "/api/share/regenerate":
