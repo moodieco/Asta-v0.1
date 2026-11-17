@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from asta.utils.logger import get_logger
 from asta.web.queries import SignalQueries
 from asta.web.routes import Routes
+from asta.web.share import PIN_ROLES, SESSION_TTL, PinLimiter
 
 logger = get_logger("asta.web")
 
@@ -36,6 +37,7 @@ API_PREFIX = "/api/"
 MAX_BODY = 48 * 1024 * 1024  # .zip bundles upload base64-encoded, up to 25 MB source
 TOKEN_COOKIE = "asta_share"
 TOKEN_COOKIE_MAX_AGE = 7 * 24 * 3600
+SESSION_COOKIE = "asta_session"
 
 # Headers that only a tunnel / reverse proxy adds. Their presence means loopback
 # is the proxy, not the owner.
@@ -48,14 +50,7 @@ _PROXY_HEADERS = (
     "Cf-Ray",
 )
 
-_DENIED_HTML = (
-    "<!doctype html><html><body style='font-family:system-ui;display:grid;place-items:center;"
-    "min-height:100vh;margin:0;color:#334155'><div style='text-align:center;max-width:420px;"
-    "padding:24px'><h2 style='margin:0 0 8px;font-size:18px'>ASTA — share link required</h2>"
-    "<p style='margin:0;font-size:14px;line-height:1.5'>This dashboard is only reachable with a "
-    "valid share link. Open the dashboard on this machine and copy the editor or view-only URL.</p>"
-    "</div></body></html>"
-)
+
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -116,6 +111,39 @@ class _Handler(BaseHTTPRequestHandler):
                 return unquote(value)
         return None
 
+    def _cookie_value(self, name: str) -> Optional[str]:
+        header = self.headers.get("Cookie") or ""
+        for chunk in header.split(";"):
+            key, _, value = chunk.strip().partition("=")
+            if key == name and value:
+                return unquote(value)
+        return None
+
+    def _session_role(self) -> Optional[str]:
+        share = getattr(self, "share_manager", None)
+        if share is None:
+            return None
+        try:
+            return share.read_session(self._cookie_value(SESSION_COOKIE))
+        except Exception:  # noqa: BLE001 - a broken cookie must not 500 the server
+            return None
+
+    def _client_key(self) -> str:
+        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        return forwarded or self.headers.get("Cf-Connecting-Ip") or self.client_address[0]
+
+    def _cookie(self, name: str, value: str, max_age: int) -> str:
+        parts = [
+            "{}={}".format(name, quote(value, safe="")),
+            "Path=/",
+            "HttpOnly",
+            "SameSite=Lax",
+            "Max-Age={}".format(int(max_age)),
+        ]
+        if self._secure_request():
+            parts.append("Secure")
+        return "; ".join(parts)
+
     def _proxied(self) -> bool:
         """True when a tunnel/reverse proxy relayed this request.
 
@@ -135,21 +163,15 @@ class _Handler(BaseHTTPRequestHandler):
         token = (query.get("token") or [None])[0]
         if not token or self._cookie_token() == token:
             return
-        parts = [
-            "{}={}".format(TOKEN_COOKIE, quote(token, safe="")),
-            "Path=/",
-            "HttpOnly",
-            "SameSite=Lax",
-            "Max-Age={}".format(TOKEN_COOKIE_MAX_AGE),
-        ]
-        if self._secure_request():
-            parts.append("Secure")
-        self._pending_cookie = "; ".join(parts)
+        self._pending_cookie = self._cookie(TOKEN_COOKIE, token, TOKEN_COOKIE_MAX_AGE)
 
     def _access(self) -> str:
         ip = self.client_address[0]
         if ip in ("127.0.0.1", "::1", "localhost") and not self._proxied():
             return "editor"
+        session = self._session_role()
+        if session:
+            return session
         share = getattr(self, "share_manager", None)
         if share is None:
             return "denied"
@@ -157,6 +179,79 @@ class _Handler(BaseHTTPRequestHandler):
         if access != "denied":
             self._remember_token()
         return access
+
+    def _session_payload(self) -> Dict[str, Any]:
+        share = getattr(self, "share_manager", None)
+        loopback = self.client_address[0] in ("127.0.0.1", "::1", "localhost") and not self._proxied()
+        role: Optional[str] = None
+        if loopback:
+            role = "editor"
+        elif share is not None:
+            role = self._session_role()
+            if role is None:
+                role = share.authenticate(self._token())
+        pins = share.pins_configured() if share is not None else {"viewer": False, "editor": False}
+        return {
+            "authenticated": role is not None,
+            "role": role,
+            "loopback": loopback,
+            "pins": pins,
+            "sessionTtl": SESSION_TTL,
+            "tokenRequired": role is None,
+        }
+
+    def _handle_auth(self, path: str, body: Dict[str, Any]) -> None:
+        share = getattr(self, "share_manager", None)
+        if share is None:
+            self._json(503, {"error": "share auth unavailable"})
+            return
+        if path == "/api/auth/logout":
+            self._pending_cookie = self._cookie(SESSION_COOKIE, "", 0)
+            self._json(200, {"authenticated": False, "role": None})
+            return
+
+        role = str(body.get("role") or "").strip().lower()
+        raw_pin = body.get("pin")
+        pin = "" if raw_pin is None else str(raw_pin)
+        if role not in PIN_ROLES:
+            self._json(400, {"error": "role must be viewer or editor", "role": role})
+            return
+        if not share.pin_configured(role):
+            self._json(409, {"error": "pin not configured for this role", "role": role})
+            return
+
+        limiter = getattr(self, "limiter", None)
+        key = self._client_key()
+        wait = limiter.locked_for(key) if limiter is not None else 0
+        if wait:
+            self._json(429, {"error": "too many attempts", "retryAfter": wait})
+            return
+        if not share.verify_pin(role, pin):
+            window = limiter.record_failure(key) if limiter is not None else 0
+            logger.warning(
+                "failed pin attempt", extra={"role": role, "client": key, "lockSeconds": window}
+            )
+            payload: Dict[str, Any] = {"error": "invalid pin"}
+            if window:
+                payload["retryAfter"] = window
+            self._json(401, payload)
+            return
+
+        if limiter is not None:
+            limiter.reset(key)
+        session = share.issue_session(role)
+        self._pending_cookie = self._cookie(SESSION_COOKIE, str(session["value"]), int(session["maxAge"]))
+        logger.info("pin login", extra={"role": role, "client": key})
+        self._json(
+            200,
+            {
+                "authenticated": True,
+                "role": role,
+                "expiresAt": session["expiresAt"],
+                "sessionTtl": session["maxAge"],
+                "pins": share.pins_configured(),
+            },
+        )
 
     # -- static -----------------------------------------------------------
     def _resolve(self, path: str) -> Optional[Path]:
@@ -223,6 +318,11 @@ class _Handler(BaseHTTPRequestHandler):
 
         access = self._access()
 
+        # The login screen needs this before it has any credential.
+        if path in ("/api/session", "/api/session/"):
+            self._json(200, self._session_payload())
+            return
+
         if path.startswith(API_PREFIX):
             if access == "denied":
                 self._json(401, {"error": "share token required"})
@@ -235,10 +335,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(status, payload)
             return
 
-        if access == "denied":
-            self._html(401, _DENIED_HTML)
-            return
-
+        # The SPA shell is public on purpose: it holds no data, and the role/PIN
+        # screen has to render before the visitor owns a credential. Every
+        # /api/* call behind it stays gated.
         if path in ("/", "/index.html"):
             self._serve_spa()
             return
@@ -263,6 +362,20 @@ class _Handler(BaseHTTPRequestHandler):
     def _dispatch_write(self, method: str) -> None:
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+
+        # PIN login/logout live before the access gate: they exist precisely for
+        # callers who do not have access yet.
+        if path in ("/api/auth", "/api/auth/logout"):
+            if method != "POST":
+                self._json(405, {"error": "method not allowed", "method": method})
+                return
+            body = self._read_body()
+            if body is None:
+                self._json(413, {"error": "request body too large"})
+                return
+            self._handle_auth(path, body)
+            return
+
         access = self._access()
         if access == "denied":
             self._json(401, {"error": "share token required"})
@@ -295,6 +408,7 @@ class DashboardServer:
         status_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         config_summary: Optional[Callable[[], Dict[str, Any]]] = None,
         setup_summary: Optional[Callable[[], Dict[str, Any]]] = None,
+        setup_complete_provider: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         system_snapshot: Optional[Callable[[], Dict[str, Any]]] = None,
         scanner_library: Optional[Any] = None,
         alert_log: Optional[Any] = None,
@@ -314,6 +428,7 @@ class DashboardServer:
             status_provider=status_provider,
             config_summary=config_summary,
             setup_summary=setup_summary,
+            setup_complete_provider=setup_complete_provider,
             system_snapshot=system_snapshot,
             scanner_library=scanner_library,
             alert_log=alert_log,
@@ -339,6 +454,7 @@ class DashboardServer:
                 "routes": self.routes,
                 "web_dir": self.web_dir,
                 "share_manager": self._share_manager,
+                "limiter": PinLimiter(),
             },
         )
         try:
