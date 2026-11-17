@@ -70,6 +70,7 @@ path, and it returns nothing but `{"ok": true}`.
 | `CXS004_EMA_PULLBACK` | crypto | 1h | trend pullback continuation (EMA 20/100 + RSI reset) |
 | `STS001_EMA_TREND` | stock | 1d | EMA cross aligned with EMA 200 |
 | `STS002_BREAKOUT_TREND` | stock | 1d | 40-bar breakout + volume + overnight gap |
+| `STS003_IDX_LIQUIDITY` | stock | 5m | BPJS SCANNER — IHSG intraday: price ≥100, volume >1M, value >1B, change >0, 2%/5%, exit 15:45 WIB |
 
 Writing your own: **[`docs/SCANNER_GUIDE.md`](docs/SCANNER_GUIDE.md)**.
 Uploading one: the dashboard installer is marked *coming soon* — the single-file
@@ -86,7 +87,9 @@ asta --list-scanners | --health | --test-alert | --sample-alert
 ```
 
 Utilities live in `scripts/`: `validate_config.py`, `test_connections.py`,
-`scanner_status.py`, `inspect_market.py`, `backfill_history.py`, `update_outcomes.py`.
+`scanner_status.py`, `inspect_market.py`, `backfill_history.py`, `update_outcomes.py`,
+`fetch_idx_universe.py` (refresh the IDX ticker list), `probe_idx_screen.py`
+(replay the BPJS screen on live bars).
 
 ## Install as a service
 
@@ -150,7 +153,7 @@ MIT — see [LICENSE](LICENSE). Use it, fork it, ship it; no warranty.
 
 ## Status
 
-Working and tested: engine, 9 scanners, SQLite history, Discord delivery, dashboard
+Working and tested: engine, 10 scanners, SQLite history, Discord delivery, dashboard
 (read + write), share tokens, Tailscale Funnel, service units for three OSes.
 
 Next, in order: single-file scanner upload (template + strict validation), Windows
