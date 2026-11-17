@@ -135,6 +135,45 @@ def test_setup_and_system_endpoints_forward_the_providers(db_path: Path) -> None
     assert status == 200 and payload["cpuPct"] == 1.5
 
 
+def test_setup_complete_writes_and_is_not_available_without_a_provider(db_path: Path) -> None:
+    """POST /api/setup/complete releases the setup gate by writing state."""
+    assert Routes(SignalQueries(db_path)).dispatch(
+        "/api/setup/complete", method="POST", body={"port": 4310}
+    ) == (503, {"error": "setup writes unavailable"})
+
+    seen: list = []
+    summary = {"available": True, "complete": True, "system": {"port": 4310}}
+
+    def provider(body: dict) -> dict:
+        seen.append(body)
+        return summary
+
+    routes = Routes(SignalQueries(db_path), setup_complete_provider=provider)
+    status, payload = routes.dispatch("/api/setup/complete", method="POST", body={"port": 4310, "dryRun": True})
+    assert status == 200
+    assert payload["completed"] is True and payload["setup"]["complete"] is True
+    assert seen == [{"port": 4310, "dryRun": True}]
+
+    # a viewer share link must not be able to complete setup
+    status, payload = routes.dispatch(
+        "/api/setup/complete", method="POST", body={}, access="viewer"
+    )
+    assert status == 403 and "view-only" in payload["error"]
+    assert len(seen) == 1
+
+
+def test_setup_complete_rejects_a_bad_payload(db_path: Path) -> None:
+    from asta.utils.exceptions import ConfigurationError
+
+    def provider(body: dict) -> dict:
+        raise ConfigurationError("dashboard port must be between 1 and 65535")
+
+    routes = Routes(SignalQueries(db_path), setup_complete_provider=provider)
+    status, payload = routes.dispatch("/api/setup/complete", method="POST", body={"port": 99999})
+    assert status == 400
+    assert "port" in payload["error"]
+
+
 def test_server_serves_spa_and_api(db_path: Path, tmp_path: Path) -> None:
     web_dir = tmp_path / "dist"
     (web_dir / "assets").mkdir(parents=True)
