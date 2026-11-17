@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils"
 import { fmtInt } from "@/lib/format"
 import type { AppData } from "@/lib/api"
+import { completeSetup } from "@/lib/api"
 import { previewActions, usePreview } from "@/lib/preview"
 import { buildScannerRows, marketMeta } from "@/lib/scanners"
 import {
@@ -40,13 +41,22 @@ const STEPS = [
 
 const MARKETS = ["stock", "crypto", "forex"] as const
 
-export function SetupPage({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
+export function SetupPage({
+  data,
+  navigate,
+  onSkip,
+}: {
+  data: AppData
+  navigate: (path: string) => void
+  onSkip?: () => void
+}) {
   const preview = usePreview()
   const toast = useToast()
   const [step, setStep] = useState(1)
   const [webhooks, setWebhooks] = useState<Record<string, string>>({})
   const [port, setPort] = useState(String(data.setup?.system.port ?? 4310))
   const [dryRun, setDryRun] = useState(data.config?.dryRun ?? false)
+  const [saving, setSaving] = useState(false)
 
   const scanners = useMemo(
     () =>
@@ -62,13 +72,36 @@ export function SetupPage({ data, navigate }: { data: AppData; navigate: (path: 
 
   const configured = MARKETS.filter((market) => data.setup?.webhooks?.[market]?.configured).length
 
-  const finish = () => {
-    if (port && port !== String(data.setup?.system.port)) {
-      toast.info("Port change noted", "The port is written by `asta setup`; the dashboard stays on its current port.")
+  const finish = async () => {
+    const portChanged = Boolean(port) && port !== String(data.setup?.system.port)
+    setSaving(true)
+    try {
+      /* The dashboard writes setup_state.json only — .env and the YAML configs
+       * stay with `asta setup`, so the browser never touches a secret. */
+      await completeSetup(portChanged ? { dryRun } : { port, dryRun })
+      previewActions.acknowledge("setup-review")
+      data.refresh()
+      if (portChanged) {
+        toast.info(
+          "Port not written",
+          `The dashboard stays on ${data.setup?.system.port}. Change the port with \`asta setup\`.`,
+        )
+      }
+      toast.success("Setup complete", "setup_state.json records the review, so the wizard stops reopening.")
+      navigate("/overview")
+    } catch (error) {
+      toast.error(
+        "Setup not saved",
+        error instanceof Error ? error.message : "The dashboard could not write config/setup_state.json.",
+      )
+    } finally {
+      setSaving(false)
     }
-    previewActions.acknowledge("setup-review")
-    toast.success("Setup reviewed", "The dashboard is ready. Engine writes happen through `asta setup`.")
-    navigate("/overview")
+  }
+
+  const skip = () => {
+    if (onSkip) onSkip()
+    else navigate("/overview")
   }
 
   const webhookValid = (value: string) => /^https:\/\/discord(app)?\.com\/api\/webhooks\/\S+$/.test(value.trim())
@@ -84,7 +117,7 @@ export function SetupPage({ data, navigate }: { data: AppData; navigate: (path: 
           </Badge>
         }
         actions={
-          <Button variant="ghost" onClick={() => navigate("/overview")}>
+          <Button variant="ghost" onClick={skip}>
             Skip to dashboard
           </Button>
         }
@@ -317,7 +350,7 @@ export function SetupPage({ data, navigate }: { data: AppData; navigate: (path: 
 
           {step === 5 ? (
             <Card>
-              <CardHeader title="5 · Review & save" subtitle="Nothing is written until the installer runs" />
+              <CardHeader title="5 · Review & save" subtitle="Nothing is written until you save" />
               <div className="px-4 pb-4">
                 <div className="grid gap-2 sm:grid-cols-2">
                   {[
@@ -355,8 +388,9 @@ export function SetupPage({ data, navigate }: { data: AppData; navigate: (path: 
                   ))}
                 </div>
                 <div className="mt-3 rounded-xl border border-info/20 bg-info-soft/50 px-3 py-2 text-[10.5px] leading-relaxed text-info">
-                  Saving from the dashboard is a preview action. `asta setup` writes .env, app.yaml and
-                  setup_state.json — the wizard keeps the same answers so nothing has to be retyped.
+                  Save & finish writes config/setup_state.json — the step answers plus the completion stamp the
+                  dashboard gate reads. .env and the YAML configs stay with `asta setup`, so the browser never
+                  writes a secret.
                 </div>
               </div>
             </Card>
@@ -375,8 +409,8 @@ export function SetupPage({ data, navigate }: { data: AppData; navigate: (path: 
                   Continue <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               ) : (
-                <Button variant="primary" size="md" onClick={finish}>
-                  <Rocket className="h-3.5 w-3.5" /> Save & finish
+                <Button variant="primary" size="md" onClick={finish} disabled={saving}>
+                  <Rocket className="h-3.5 w-3.5" /> {saving ? "Saving…" : "Save & finish"}
                 </Button>
               )}
             </div>
@@ -405,7 +439,7 @@ export function SetupPage({ data, navigate }: { data: AppData; navigate: (path: 
             <CardHeader title="Good to know" subtitle="Design boundaries" right={<Sparkles className="h-3.5 w-3.5 text-faint" />} />
             <div className="space-y-1.5 px-4 pb-4 text-[10.5px] leading-relaxed text-faint">
               <p>· No trading execution, no auto-buy, no auto-sell — signals only.</p>
-              <p>· The dashboard API is read-only and loopback-only.</p>
+              <p>· The dashboard binds loopback only; the one write outside the scanner library is setup bookkeeping.</p>
               <p>· Signal History keeps working while the engine is stopped.</p>
               <p>· Existing credentials are detected, so nothing is asked twice.</p>
             </div>
