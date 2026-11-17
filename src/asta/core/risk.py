@@ -54,8 +54,14 @@ def build_levels(
     take_profit: Optional[float] = None,
     last_timestamp: Optional[datetime] = None,
     timeframe: str = "",
+    expires_at: Optional[datetime] = None,
 ) -> Optional[RiskLevels]:
-    """Return validated levels, or ``None`` when the geometry is unusable."""
+    """Return validated levels, or ``None`` when the geometry is unusable.
+
+    ``expires_at`` wins over the ``max_bars`` expiry: a session-bound setup
+    ("flat before the close") is not a bar count, because the exchange's lunch
+    break and holidays sit between the bars.
+    """
     if not entry or entry <= 0:
         return None
     config = risk_params(params)
@@ -95,13 +101,13 @@ def build_levels(
     reward_distance = abs(float(target) - entry)
     risk_reward = round(reward_distance / risk_distance, 2)
 
-    expires_at = None
-    if last_timestamp is not None and timeframe:
+    expires = expires_at
+    if expires is None and last_timestamp is not None and timeframe:
         try:
             seconds = timeframe_to_seconds(timeframe) * int(config["max_bars"])
-            expires_at = last_timestamp + timedelta(seconds=seconds)
+            expires = last_timestamp + timedelta(seconds=seconds)
         except ValueError:
-            expires_at = None
+            expires = None
 
     return RiskLevels(
         entry=float(entry),
@@ -111,7 +117,7 @@ def build_levels(
         risk_pct=round(risk_pct, 3),
         atr=round(float(atr_value), 8) if atr_value else None,
         source=source,
-        expires_at=expires_at,
+        expires_at=expires,
     )
 
 
