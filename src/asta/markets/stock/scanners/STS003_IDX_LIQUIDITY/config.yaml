@@ -1,0 +1,32 @@
+id: STS003_IDX_LIQUIDITY
+name: BPJS SCANNER
+market: stock
+timeframe: 5m
+enabled: true
+# Empty -> the whole IDX universe from asta/markets/stock/idx_universe.py
+# (955 issuers). Put an explicit list here to narrow it down.
+symbols: []
+description: >
+  IHSG intraday screen, all sectors: price >= 100, volume today > 1M shares,
+  value today > IDR 1B, change today > 0. First pass 09:30 WIB and re-checked
+  through the session; long with a 2% stop and a 5% target, expiring 15:45 WIB
+  before the close. Net foreign buy/sell is NOT filtered - check it manually
+  (must be above 0).
+params:
+  timezone: Asia/Jakarta
+  session_start: "09:30"
+  session_end: "15:45"
+  min_price: 100
+  min_volume: 1000000
+  min_value: 1000000000
+  min_change_pct: 0.0
+  stop_pct: 0.02
+  take_profit_pct: 0.05
+  # 955 tickers / 120 per cycle = one full sweep every 8 cycles
+  batch_size: 120
+  # a name without a print for this long is halted: skip instead of alerting
+  max_bar_age_minutes: 30
+  min_confidence: 0.5
+  min_candles: 90
+  # one alert per symbol per session (7h covers 09:30 -> 16:30)
+  dedup_window_seconds: 25200
