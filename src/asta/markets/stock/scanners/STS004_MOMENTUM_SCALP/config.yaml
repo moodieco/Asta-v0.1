@@ -1,0 +1,13 @@
+id: STS004_MOMENTUM_SCALP
+name: Momentum Scalp
+market: stock
+timeframe: 1d
+enabled: true
+symbols: []
+description: >
+  Liquid IDX stocks (price >= 100, volume MA5 >= 10M shares, value MA5 >= 10B)
+  closing up 2%+ on a 30%+ volume jump versus the previous day. Fixed 2% stop
+  and 5% target. Invalid if the next session gaps below the stop.
+params:
+  min_confidence: 0.55
+  dedup_window_seconds: 86400
